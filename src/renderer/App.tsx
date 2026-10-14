@@ -198,7 +198,7 @@ export default function App() {
         } catch (e: any) {
           if (e?.name === 'AbortError') return
           const pe = e instanceof ProviderError ? e : null
-          setMsg(aid, { content: text, errorCode: pe?.code || 'unknown', error: pe ? (pe.status ? `HTTP ${pe.status} ` : '') + pe.detail : String(e?.message || e) })
+          setMsg(aid, { content: text, errorCode: pe?.code || 'unknown', error: pe ? (pe.status ? `HTTP ${pe.status} ` : '') + pe.detail : String(e?.message || e), errorBody: pe?.body, errorRequest: pe?.request })
         }
       }))
     } catch { /* aborted during search */ } finally { setBusyId(''); abortRef.current = null }
@@ -243,7 +243,7 @@ export default function App() {
           onRetry: (n, delay) => setMsg(aid, { status: t.retrying.replace('{n}', String(n)).replace('{s}', (delay / 1000).toFixed(1)) }),
         }, () => !text && !reasoning)
         const usage = res.usage || { input: estimateMessages(ctx, conv.systemPrompt), output: estimateTokens(res.text + (res.reasoning || '')), estimated: true }
-        const final: Message = { ...asst, content: res.text, reasoning: res.reasoning || reasoning || undefined, usage, toolCalls: res.toolCalls.length ? res.toolCalls : undefined }
+        const final: Message = { ...asst, content: res.text, reasoning: res.reasoning || reasoning || undefined, usage, toolCalls: res.toolCalls.length ? res.toolCalls : undefined, thinkingBlocks: res.toolCalls.length && res.thinkingBlocks?.length ? res.thinkingBlocks : undefined }
         msgs = [...msgs.slice(0, -1), final]
         patchConv(id, c => ({ ...c, messages: msgs }))
         if (!res.toolCalls.length || ctrl.signal.aborted) break
@@ -259,7 +259,7 @@ export default function App() {
         const last = msgs[msgs.length - 1]
         const pe = e instanceof ProviderError ? e : null
         const partial = (e as any)?.partial?.text
-        msgs = [...msgs.slice(0, -1), { ...last, status: undefined, content: partial || last.content, errorCode: pe?.code || 'unknown', error: pe ? (pe.status ? `HTTP ${pe.status} ` : '') + pe.detail : String(e?.message || e) }]
+        msgs = [...msgs.slice(0, -1), { ...last, status: undefined, content: partial || last.content, errorCode: pe?.code || 'unknown', error: pe ? (pe.status ? `HTTP ${pe.status} ` : '') + pe.detail : String(e?.message || e), errorBody: pe?.body, errorRequest: pe?.request }]
         patchConv(id, c => ({ ...c, messages: msgs }))
       }
     } finally {
@@ -286,12 +286,13 @@ export default function App() {
     await (cur.compareModels?.length ? runCompare : runModel)(cur.id, [...cur.messages, m])
   }
   /** regenerate: keep the old reply as a branch at that position */
-  const regenerate = (msgId: string) => {
+  const regenerate = (msgId: string, patch?: Partial<Conversation>) => {
     if (!cur || busyId) return
     const idx = cur.messages.findIndex(m => m.id === msgId)
     let u = idx; while (u >= 0 && cur.messages[u].role !== 'user') u--
     if (u < 0) return
-    const next = branchAt(cur, u + 1, [])
+    // e.g. "retry without deep thinking": the toggle change applies to this retry and stays on the conversation
+    const next = { ...branchAt(cur, u + 1, []), ...(patch || {}) }
     patchConv(cur.id, () => next)
     convsRef.current = convsRef.current.map(c => c.id === cur.id ? next : c)
     ;(cur.compareModels?.length ? runCompare : runModel)(cur.id, next.messages)
