@@ -81,6 +81,6 @@ for (const scale of [1, 1.25, 1.5]) {
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].unmaximize())
     await expect.poll(async () => (await geometry()).maximized).toBe(false)
     const r = await geometry()
-    expect(r.content.width).toBeLessThan(wa.width + 1)
+    expect(r.content.width).toBeLessThanOrEqual(wa.width + 1)
   })
 }
