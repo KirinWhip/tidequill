@@ -2,7 +2,7 @@ import { test, expect, type ElectronApplication, type Page, _electron as electro
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { appPath, launch, seedUserData } from './helpers'
+import { appPath, launch, seedUserData, dumpMockTimings } from './helpers'
 // @ts-ignore
 import { startMockServer, UPDATE_VERSION } from '../tests/mock-server.mjs'
 import { zhCN } from '../src/renderer/locales/zh-CN'
@@ -12,7 +12,7 @@ const SHOTS = path.resolve(__dirname, '..', 'screenshots', 'p3')
 fs.mkdirSync(SHOTS, { recursive: true })
 let mock: any
 test.beforeAll(async () => { mock = await startMockServer() })
-test.afterAll(async () => { await mock.close() })
+test.afterAll(async () => { dumpMockTimings('p3', mock); await mock.close() })
 let app: ElectronApplication, page: Page
 test.afterEach(async ({}, info) => {
   if (page && info.status !== info.expectedStatus) await page.screenshot({ path: info.outputPath('failure.png') }).catch(() => {})

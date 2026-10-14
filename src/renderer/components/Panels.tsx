@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Plus, Check, XCircle, Download, Upload, Trash2, Loader2, Search, RefreshCw, ExternalLink } from 'lucide-react'
+import { Plus, Check, XCircle, Download, Upload, Trash2, Loader2, Search, RefreshCw, ExternalLink, FileInput, FileOutput, Archive, ArchiveRestore } from 'lucide-react'
 import type { AppActions } from '../App'
-import { DEFAULT_PRICES, findPrice } from '../../shared/usage'
+import { DEFAULT_PRICES, DEFAULT_CONTEXT_WINDOWS, findPrice } from '../../shared/usage'
+import { ProvidersTab } from './ProvidersTab'
 import { webdavTest } from '../webdav'
 import type { GalleryImage, McpServerConfig, Persona, PromptItem, ProviderConfig, Settings } from '../../shared/types'
 import type { Dict } from '../i18n'
@@ -15,16 +16,16 @@ const errText = (t: Dict, e: any) => e instanceof ProviderError ? `${(t as any)[
 export function SettingsPanel({ s, t, onChange, actions, initialTab, priceModel }: { s: Settings; t: Dict; onChange(s: Settings): void; actions: AppActions; initialTab?: string; priceModel?: string }) {
   type Tab = 'providers' | 'chat' | 'network' | 'usageSettings' | 'data' | 'systemTab' | 'general' | 'shortcuts'
   const [tab, setTab] = useState<Tab>((initialTab as Tab) || 'providers')
-  const set = (p: Partial<Settings>) => onChange({ ...s, ...p })
-  const setProv = (id: string, p: Partial<ProviderConfig>) => set({ providers: s.providers.map(x => x.id === id ? { ...x, ...p } : x) })
-  const [sel, setSel] = useState(s.providers[0]?.id)
-  const prov = s.providers.find(p => p.id === sel)
+  // every change is persisted immediately; show a short "saved" confirmation
+  const [savedAt, setSavedAt] = useState(0)
+  useEffect(() => { if (!savedAt) return; const h = setTimeout(() => setSavedAt(0), 1800); return () => clearTimeout(h) }, [savedAt])
+  const set = (p: Partial<Settings>) => { onChange({ ...s, ...p }); setSavedAt(Date.now()) }
   const [msg, setMsg] = useState<any>('')
   const [secure, setSecure] = useState(true)
   const [version, setVersion] = useState('')
   const [includeKeys, setIncludeKeys] = useState(false)
   useEffect(() => { api.secureStatus().then((r: any) => setSecure(!!r.available)); api.version().then(setVersion) }, [])
-  useEffect(() => setMsg(''), [tab, sel])
+  useEffect(() => setMsg(''), [tab])
   const busy = () => setMsg(<Loader2 size={14} className="spin" />)
   const ok = (x: any) => setMsg(<span className="okmsg" data-testid="settings-msg"><Check size={14} />{x}</span>)
   const fail = (x: any) => setMsg(<span className="errmsg" data-testid="settings-msg"><XCircle size={14} />{x}</span>)
@@ -34,30 +35,13 @@ export function SettingsPanel({ s, t, onChange, actions, initialTab, priceModel 
   const sys = actions.systemStatus || {}
   return (
     <div className="panel">
-      <h2>{t.settings}</h2>
+      <h2 className="withflag">{t.settings}{savedAt > 0 && <span className="savedflag" data-testid="saved-flag" role="status"><Check size={13} />{t.savedFlag}</span>}</h2>
       <div className="tabs">{tabs.map(k => <button key={k} data-tab={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{t[k]}</button>)}</div>
-      {tab === 'providers' && <div className="split">
-        <div className="plist">
-          {s.providers.map(p => <div key={p.id} className={'pitem' + (p.id === sel ? ' on' : '')} onClick={() => setSel(p.id)}>{p.name} {(p.apiKey || p.type === 'ollama') && <Check size={13} className="ok-icon" aria-label={t.apiKey} />}</div>)}
-          <button onClick={() => { const id = uid(); set({ providers: [...s.providers, { id, name: t.customProvider, type: 'openai', apiKey: '', baseURL: 'https://', models: [] }] }); setSel(id) }}><Plus size={14} />{t.addProvider}</button>
-          <button data-testid="ollama-detect" onClick={async () => { busy(); const r = await actions.detectOllama(); r.ok ? ok(t.ollamaFound + r.count) : fail(t.ollamaNotFound.replace('{url}', r.url)) }}><Search size={14} />{t.ollamaDetect}</button>
-        </div>
-        {prov && <div className="form">
-          <label>{t.name}<input value={prov.name} onChange={e => setProv(prov.id, { name: e.target.value })} /></label>
-          <label>{t.type}<select value={prov.type} onChange={e => setProv(prov.id, { type: e.target.value as any, baseURL: defaultBaseURL(e.target.value as any) })}>
-            <option value="openai">{t.typeOpenAI}</option><option value="anthropic">{t.typeAnthropic}</option><option value="gemini">{t.typeGemini}</option><option value="ollama">{t.typeOllama}</option></select></label>
-          <label>{t.apiKey}<input type="password" value={prov.apiKey} onChange={e => setProv(prov.id, { apiKey: e.target.value })} /><small className={secure ? '' : 'warn'}>{secure ? t.apiKeyHint : t.apiKeyPlainWarn}</small></label>
-          <label>{t.baseURL}<input value={prov.baseURL} onChange={e => setProv(prov.id, { baseURL: e.target.value })} /></label>
-          <label>{t.models}<textarea rows={3} value={prov.models.join(', ')} onChange={e => setProv(prov.id, { models: e.target.value.split(/[,\n]/).map(x => x.trim()).filter(Boolean) })} /></label>
-          <div className="row">
-            <button onClick={async () => { busy(); try { const m = await listModels(prov, bridgeFetch); setProv(prov.id, { models: m }); ok(m.length) } catch (e: any) { fail(errText(t, e)) } }}>{t.fetchModels}</button>
-            <button className="danger" onClick={() => { set({ providers: s.providers.filter(x => x.id !== prov.id) }); setSel(s.providers[0]?.id) }}>{t.delete}</button>
-          </div>
-          <label>{t.defaultModel}<div className="row"><select title={t.provider} value={s.defaultProviderId} onChange={e => set({ defaultProviderId: e.target.value })}>{s.providers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-            <input value={s.defaultModel} onChange={e => set({ defaultModel: e.target.value })} /></div></label>
-        </div>}
-      </div>}
+      {tab === 'providers' && <ProvidersTab s={s} t={t} set={set} actions={actions} secure={secure} />}
       {tab === 'chat' && <div className="form">
+        <label>{t.readingWidth}<div className="seg" role="radiogroup" aria-label={t.readingWidth}>
+          {(['narrow', 'standard', 'wide'] as const).map(w => <button key={w} role="radio" aria-checked={(s.readingWidth || 'standard') === w} data-width={w} className={(s.readingWidth || 'standard') === w ? 'on' : ''} onClick={() => set({ readingWidth: w })}>{t['width_' + w]}</button>)}
+        </div></label>
         <label>{t.temperature}: {s.temperature}<input type="range" min={0} max={2} step={0.1} value={s.temperature} onChange={e => set({ temperature: +e.target.value })} /></label>
         <label>{t.topP}: {s.topP}<input type="range" min={0} max={1} step={0.05} value={s.topP} onChange={e => set({ topP: +e.target.value })} /></label>
         <label>{t.maxTokens}<input type="number" value={s.maxTokens} onChange={e => set({ maxTokens: +e.target.value })} /></label>
@@ -89,10 +73,24 @@ export function SettingsPanel({ s, t, onChange, actions, initialTab, priceModel 
         </tbody></table>
         <div className="row"><button onClick={() => set({ prices: [{ pattern: '', input: 0, output: 0 }, ...s.prices] })}><Plus size={14} />{t.addPrice}</button>
           <button onClick={() => set({ prices: DEFAULT_PRICES })}>{t.resetPrices}</button></div>
+        <div className="meta">{t.ctxWindowTable}</div>
+        <table className="pricetable" data-testid="ctx-table"><thead><tr><th>{t.pricePattern}</th><th>{t.ctxTokens}</th><th /></tr></thead><tbody>
+          {(s.contextWindows || DEFAULT_CONTEXT_WINDOWS).map((w, i, arr) => <tr key={i}>
+            <td><input aria-label={t.pricePattern} value={w.pattern} onChange={e => set({ contextWindows: arr.map((x, j) => j === i ? { ...x, pattern: e.target.value } : x) })} /></td>
+            <td><input aria-label={t.ctxTokens} type="number" step="1000" value={w.tokens} onChange={e => set({ contextWindows: arr.map((x, j) => j === i ? { ...x, tokens: +e.target.value } : x) })} /></td>
+            <td><button className="icon-btn sm" title={t.delete} aria-label={t.delete} onClick={() => set({ contextWindows: arr.filter((_, j) => j !== i) })}><Trash2 size={13} /></button></td>
+          </tr>)}
+        </tbody></table>
+        <div className="row"><button onClick={() => set({ contextWindows: [{ pattern: '', tokens: 128000 }, ...(s.contextWindows || DEFAULT_CONTEXT_WINDOWS)] })}><Plus size={14} />{t.addCtxWindow}</button>
+          <button onClick={() => set({ contextWindows: DEFAULT_CONTEXT_WINDOWS })}>{t.resetPrices}</button></div>
       </div>}
       {tab === 'data' && <div className="form">
-        <div className="row"><button data-testid="backup" onClick={() => actions.backup(includeKeys)}><Download size={14} />{t.backup}</button>
-          <button data-testid="restore" onClick={() => actions.restore()}><Upload size={14} />{t.restore}</button></div>
+        <h3>{t.importExport}</h3>
+        <div className="row"><button data-testid="import-data" onClick={() => actions.importData()}><FileInput size={14} />{t.importData}</button>
+          <button data-testid="export-all" onClick={() => actions.exportAll()}><FileOutput size={14} />{t.exportJson}</button></div>
+        <h3>{t.backupRestore}</h3>
+        <div className="row"><button data-testid="backup" onClick={() => actions.backup(includeKeys)}><Archive size={14} />{t.backup}</button>
+          <button data-testid="restore" onClick={() => actions.restore()}><ArchiveRestore size={14} />{t.restore}</button></div>
         <label className="check"><input type="checkbox" checked={includeKeys} onChange={e => setIncludeKeys(e.target.checked)} /> {t.backupIncludeKeys}</label>
         <h3>{t.webdav}</h3>
         <label className="check"><input type="checkbox" checked={wd.enabled} onChange={e => setWd({ enabled: e.target.checked })} /> {t.webdavEnable}</label>
@@ -126,7 +124,7 @@ export function SettingsPanel({ s, t, onChange, actions, initialTab, priceModel 
       {tab === 'shortcuts' && <div className="form">
         <label>{t.sendKey}<select value={s.sendKey} onChange={e => set({ sendKey: e.target.value as any })}><option value="Enter">{t.key_enter}</option><option value="Ctrl+Enter">{t.key_ctrlEnter}</option></select></label>
         <table className="sc"><tbody>
-          {([[t.sc_global, s.globalShortcut || '-'], [t.sc_new, `${t.key_ctrl}+N`], [t.sc_search, `${t.key_ctrl}+K`], [t.sc_settings, `${t.key_ctrl}+,`], [t.sc_send, s.sendKey === 'Enter' ? t.key_enter : t.key_ctrlEnter], [t.sc_close, t.key_esc], [t.sc_devtools, t.key_f12]] as const).map(([a, b]) =>
+          {([[t.sc_global, s.globalShortcut || '-'], [t.sc_new, `${t.key_ctrl}+N`], [t.sc_search, `${t.key_ctrl}+K`], [t.sc_settings, `${t.key_ctrl}+,`], [t.sc_reasoning, `${t.key_ctrl}+D`], [t.sc_convSettings, `${t.key_ctrl}+Shift+S`], [t.sc_export, `${t.key_ctrl}+E`], [t.sc_sysPrompt, `${t.key_ctrl}+Shift+P`], [t.sc_send, s.sendKey === 'Enter' ? t.key_enter : t.key_ctrlEnter], [t.sc_close, t.key_esc], [t.sc_devtools, t.key_f12]] as const).map(([a, b]) =>
             <tr key={a}><td>{a}</td><td><kbd>{b}</kbd></td></tr>)}
         </tbody></table>
       </div>}

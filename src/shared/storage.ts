@@ -1,5 +1,5 @@
 import type { Conversation, Folder, GalleryImage, Persona, PromptItem, Settings } from './types'
-import { DEFAULT_PRICES } from './usage'
+import { DEFAULT_PRICES, DEFAULT_CONTEXT_WINDOWS } from './usage'
 
 export interface KV {
   get(key: string): Promise<any>
@@ -29,7 +29,7 @@ export function defaultSettings(): Settings {
     ],
     defaultProviderId: 'openai', defaultModel: 'gpt-4o-mini',
     imageProviderId: 'openai', imageModel: 'dall-e-3',
-    mcpServers: [], toolsEnabled: true, builtinTools: false, autoTitle: true, codeLineNumbers: false, codeCollapseLines: 30,
+    mcpServers: [], toolsEnabled: true, builtinTools: false, autoTitle: true, readingWidth: 'standard', contextWindows: DEFAULT_CONTEXT_WINDOWS, codeLineNumbers: false, codeCollapseLines: 30,
     topP: 1, retries: 2, retryBaseMs: 1000, showUsage: true, prices: DEFAULT_PRICES,
     webdav: { url: '', username: '', password: '', enabled: false },
     globalShortcut: 'CommandOrControl+Shift+Space', tray: true, launchAtLogin: false, autoCheckUpdate: true, onboarded: false,

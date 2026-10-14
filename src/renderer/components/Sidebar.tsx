@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type RefObject } from 'react'
 import {
-  MessageSquarePlus, Search, Settings as SettingsIcon, Users, BookOpen, Image as ImageIcon, Puzzle, FileInput, FileOutput, Pin, PinOff, Pencil, Trash2,
+  MessageSquarePlus, Search, Settings as SettingsIcon, Users, BookOpen, Image as ImageIcon, Puzzle,  Pin, PinOff, Pencil, Trash2,
   MessageSquare, Folder as FolderIcon, FolderPlus, FolderOpen, ChevronRight, CheckSquare, Square, Tag, FileDown, SlidersHorizontal, MoreHorizontal, Download, Loader2, Info,
 } from 'lucide-react'
 import type { Conversation, Folder } from '../../shared/types'
@@ -10,7 +10,7 @@ import { useT } from '../i18n'
 interface Props {
   convs: Conversation[]; folders: Folder[]; curId: string; busyId: string; searchRef: RefObject<HTMLInputElement>
   onSelect(id: string): void; onNew(): void; onPatch(id: string, fn: (c: Conversation) => Conversation): void; onDelete(ids: string[]): void
-  onFolders(f: Folder[]): void; onOpenSettings(id: string): void; onModal(m: string): void; onImport(): void; onExportAll(): void; onExportMd(c: Conversation): void
+  onFolders(f: Folder[]): void; onOpenSettings(id: string): void; onModal(m: string): void; onExportMd(c: Conversation): void
   update: any; onUpdate(): void
 }
 type Menu = { x: number; y: number; kind: 'conv'; id: string } | { x: number; y: number; kind: 'folder'; id: string } | null
@@ -44,20 +44,18 @@ export function Sidebar(p: Props) {
     { folder: null, items: filtered.filter(c => !c.folderId || !p.folders.some(f => f.id === c.folderId)) },
   ]
   const toggleSel = (id: string) => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
-  const navItems: [string, any, string][] = [
-    ['personas', Users, t.personas], ['prompts', BookOpen, t.prompts], ['images', ImageIcon, t.images], ['tools', Puzzle, t.tools],
-    ['import', FileInput, t.importData], ['export', FileOutput, t.exportJson], ['settings', SettingsIcon, t.settings], ['about', Info, t.about],
-  ]
+  // workspace tools grouped together; import/export live in Settings > Data
+  const toolItems: [string, any, string][] = [['personas', Users, t.personas], ['prompts', BookOpen, t.prompts], ['images', ImageIcon, t.images], ['tools', Puzzle, t.tools]]
+  const appItems: [string, any, string, string][] = [['settings', SettingsIcon, t.settings, `${t.key_ctrl}+,`], ['about', Info, t.about, '']]
   const menuConv = menu?.kind === 'conv' ? p.convs.find(c => c.id === menu.id) : undefined
   const menuFolder = menu?.kind === 'folder' ? p.folders.find(f => f.id === menu.id) : undefined
 
   return (
     <aside className="sidebar">
-      <div className="brand"><img src="./logo.png" alt="" width={22} height={22} className="brand-logo" />{t.brand}</div>
       {p.update && <div className="updatebar"><Download size={14} /><span>{t.updateAvailable}{p.update.latest}</span>
         <button className="btn primary sm" disabled={updating} onClick={() => { setUpdating(true); p.onUpdate() }}>{updating ? <Loader2 size={13} className="spin" /> : t.updateDownload}</button></div>}
-      <button className="btn primary block" onClick={p.onNew}><MessageSquarePlus size={16} />{t.newChat}</button>
-      <div className="searchbox"><Search size={14} /><input ref={p.searchRef} placeholder={t.search} aria-label={t.search} value={query} onChange={e => setQuery(e.target.value)} /></div>
+      <button className="btn primary block" title={`${t.newChat} (${t.key_ctrl}+N)`} onClick={p.onNew}><MessageSquarePlus size={16} />{t.newChat}</button>
+      <div className="searchbox"><Search size={14} /><input ref={p.searchRef} placeholder={`${t.search} (${t.key_ctrl}+K)`} aria-label={t.search} value={query} onChange={e => setQuery(e.target.value)} /></div>
       {allTags.length > 0 && <div className="tagbar">
         <button className={'tagchip' + (!tag ? ' on' : '')} onClick={() => setTag('')}>{t.allTags}</button>
         {allTags.map(x => <button key={x} className={'tagchip' + (tag === x ? ' on' : '')} onClick={() => setTag(tag === x ? '' : x)}><Tag size={11} />{x}</button>)}
@@ -70,6 +68,7 @@ export function Sidebar(p: Props) {
           onClick={() => { setSelecting(!selecting); setSelected(new Set()) }}><CheckSquare size={15} /></button>
       </div>
       <div className="convlist">
+        {!flat && !selecting && p.folders.length === 0 && <div className="emptyhint" data-testid="folders-empty"><FolderPlus size={14} /><span>{t.foldersEmpty}</span></div>}
         {groups.map(g => (g.folder || g.items.length > 0 || !flat) && <div key={g.folder?.id || 'none'} className="group">
           {g.folder && <div className="folderhead" onClick={() => p.onFolders(p.folders.map(f => f.id === g.folder!.id ? { ...f, collapsed: !f.collapsed } : f))}
             onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY, kind: 'folder', id: g.folder!.id }) }}>
@@ -98,8 +97,14 @@ export function Sidebar(p: Props) {
           if (confirm(t.confirmBatchDelete.replace('{n}', String(selected.size)))) { p.onDelete([...selected]); setSelected(new Set()); setSelecting(false) }
         }}><Trash2 size={14} />{t.deleteSelected} ({selected.size})</button>
       </div>}
-      <nav className="sidenav">
-        {navItems.map(([k, Icon, label]) => <button key={k} onClick={() => k === 'import' ? p.onImport() : k === 'export' ? p.onExportAll() : p.onModal(k)}><Icon size={16} />{label}</button>)}
+      <nav className="sidenav" aria-label={t.navLabel}>
+        <div className="navgroup-label">{t.navTools}</div>
+        <div className="navgrid" data-testid="nav-tools">
+          {toolItems.map(([k, Icon, label]) => <button key={k} title={label} onClick={() => p.onModal(k)}><Icon size={16} /><span>{label}</span></button>)}
+        </div>
+        <div className="navrow">
+          {appItems.map(([k, Icon, label, sc]) => <button key={k} title={sc ? `${label} (${sc})` : label} onClick={() => p.onModal(k)}><Icon size={16} /><span>{label}</span></button>)}
+        </div>
       </nav>
       {menu && <div className="ctxmenu" role="menu" style={{ left: Math.min(menu.x, window.innerWidth - 230), top: Math.min(menu.y, window.innerHeight - 330) }} onClick={e => e.stopPropagation()}>
         {menuConv && <>

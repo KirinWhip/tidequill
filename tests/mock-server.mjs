@@ -29,7 +29,9 @@ export function startMockServer(port = 0) {
   const sockets = new Set()
   const flaky = new Map()
   const requests = []
+  const timings = [] // receive time of each request (diagnostics)
   const server = http.createServer((req, res) => {
+    timings.push({ ev: 'req', at: Date.now(), url: req.url, rport: req.socket.remotePort })
     let body = ''
     req.on('data', d => (body += d))
     req.on('end', async () => {
@@ -54,6 +56,7 @@ export function startMockServer(port = 0) {
       let j = {}
       try { j = JSON.parse(body) } catch {}
       requests.push(j)
+      timings.push({ at: Date.now(), model: j.model, last: String((j.messages || []).at(-1)?.content || '').slice(0, 40) })
       const model = j.model || 'mock-ok'
       const err = (status, message) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: { message, type: 'mock' } })) }
       if (model === 'mock-401') return err(401, 'Incorrect API key provided')
@@ -102,9 +105,9 @@ export function startMockServer(port = 0) {
       res.write('data: [DONE]\n\n'); res.end()
     })
   })
-  server.on('connection', s => { sockets.add(s); s.on('close', () => sockets.delete(s)) })
+  server.on('connection', s => { timings.push({ ev: 'conn', at: Date.now(), rport: s.remotePort }); sockets.add(s); s.on('close', () => sockets.delete(s)) })
   return new Promise(resolve => server.listen(port, '127.0.0.1', () => resolve({
-    port: server.address().port, requests,
+    port: server.address().port, requests, timings,
     url: `http://127.0.0.1:${server.address().port}/v1`,
     close: () => new Promise(r => { for (const s of sockets) s.destroy(); server.close(() => r()) }),
   })))

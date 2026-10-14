@@ -23,6 +23,7 @@ export interface AppActions {
   backup(includeKeys: boolean): Promise<void>; restore(): Promise<void>; sync(): Promise<string>
   detectOllama(): Promise<{ ok: boolean; count: number; url: string }>
   checkUpdate(): Promise<any>; systemStatus: any
+  importData(): Promise<void> | void; exportAll(): any
 }
 
 export default function App() {
@@ -72,6 +73,7 @@ export default function App() {
   const dark = settings ? (settings.theme === 'system' ? sysDark : settings.theme === 'dark') : false
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+    api.setTitleBarTheme?.(dark)
     if (settings) document.documentElement.style.fontSize = settings.fontSize + 'px'
   }, [dark, settings?.fontSize])
   // system integration (global shortcut, tray, login item)
@@ -244,11 +246,14 @@ export default function App() {
     try {
       const list = f.name.endsWith('.md') ? [importMarkdown(f.content)] : importJSON(f.content)
       updateConvs(l => [...list.map(c => ({ ...c, providerId: c.providerId || settings!.defaultProviderId, model: c.model || settings!.defaultModel })), ...l.filter(x => !list.some(n => n.id === x.id))])
+      setModal(null)
     } catch { alert(t.err_invalid_file) }
   }
 
   const actions: AppActions = {
     systemStatus,
+    importData: doImport,
+    exportAll: () => api.saveFile('tidequill-export.json', exportJSON(convs)),
     async backup(includeKeys) {
       const data: Record<string, any> = {}
       for (const k of BACKUP_KEYS) data[k] = await api.kvGet(k)
@@ -300,11 +305,15 @@ export default function App() {
   return (
     <I18n.Provider value={t}>
     <MdOptionsCtx.Provider value={{ lineNumbers: settings.codeLineNumbers, collapseLines: settings.codeCollapseLines }}>
+    <div className="shell">
+    <header className={'titlebar plat-' + (api.platform || 'win32')} data-testid="titlebar">
+      <span className="brand"><img src="./logo.png" alt="" width={18} height={18} className="brand-logo" />{t.brand}</span>
+      {cur && <span className="tb-title" title={cur.title}>{cur.title}</span>}
+    </header>
     <div className="app">
       <Sidebar convs={convs} folders={folders} curId={curId} searchRef={searchRef} busyId={busyId}
         onSelect={setCurId} onNew={() => newChat()} onPatch={patchConv} onDelete={deleteConvs} onFolders={saveFolders}
-        onOpenSettings={id => setConvSettingsId(id)} onModal={m => setModal(m as Modal)} onImport={doImport}
-        onExportAll={() => api.saveFile('tidequill-export.json', exportJSON(convs))}
+        onOpenSettings={id => setConvSettingsId(id)} onModal={m => setModal(m as Modal)}
         onExportMd={c => api.saveFile(`${c.title}.md`, conversationToMarkdown(c, { model: t.exportedModel, attachment: t.attachment }))}
         update={update} onUpdate={() => api.downloadUpdate().then(() => api.installUpdate())} />
       <main className="main">
@@ -331,6 +340,7 @@ export default function App() {
       {convForSettings && <ConvSettings conv={convForSettings} settings={settings} lastRequest={lastRequests[convForSettings.id]} folders={folders} onPatch={fn => patchConv(convForSettings.id, fn)} onClose={() => setConvSettingsId('')} />}
       {needsOnboarding && <Onboarding settings={settings} onDone={s => saveSettings({ ...s, onboarded: true })} />}
       {toast && <div className="toast" role="status"><CheckCircle2 size={14} />{toast}</div>}
+    </div>
     </div>
     </MdOptionsCtx.Provider>
     </I18n.Provider>

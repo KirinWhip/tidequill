@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, session, shell, Menu, net, safeStorage, clipboard, Tray, globalShortcut, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, session, shell, Menu, net, safeStorage, clipboard, Tray, globalShortcut, nativeImage, nativeTheme } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import path from 'node:path'
 import fs from 'node:fs'
@@ -14,6 +14,17 @@ const dataDir = () => path.join(app.getPath('userData'), 'data')
 const fileFor = (k: string) => path.join(dataDir(), k + '.json')
 const allowFile = () => path.join(app.getPath('userData'), 'tool-allowlist.json')
 let tools: ToolManager
+/** Provider / WebDAV requests use an in-memory session (no 'persist:' prefix, no HTTP cache).
+ *  Reason (root cause of the flaky Windows E2E timeouts in Round 2 · A): with the default persistent session the FIRST
+ *  request of every app start waits until Chromium has loaded the on-disk SQLite cookie store of the profile
+ *  (netlog: COOKIE_PERSISTENT_STORE_LOAD, median ~130 ms, but 1.4 s and 4.8 s observed on the Windows runner),
+ *  which the 3 s idle timeout of the tests counted as "no response". API calls never need cookies. */
+let apiSess: Electron.Session | null = null
+const apiSession = () => (apiSess ||= session.fromPartition('tidequill-api', { cache: false }))
+/** diagnostics (tests only): TIDEQUILL_HTTP_LOG=<file> records bridge timings and main-process event-loop stalls */
+const HTTP_LOG = process.env.TIDEQUILL_HTTP_LOG || ''
+const httpLog = (o: any) => { try { fs.appendFileSync(HTTP_LOG, JSON.stringify({ at: Date.now(), ...o }) + '\n') } catch { /* ignore */ } }
+if (HTTP_LOG) { let last = Date.now(); setInterval(() => { const now = Date.now(); if (now - last > 400) httpLog({ ev: 'stall', ms: now - last - 100, uptimeMs: Math.round(process.uptime() * 1000) }); last = now }, 100).unref() }
 let win: BrowserWindow | null = null
 let lang: MainLang = 'zh'
 let tray: Tray | null = null
@@ -31,10 +42,24 @@ function readJSON(f: string) { try { return JSON.parse(fs.readFileSync(f, 'utf8'
 function writeJSON(f: string, v: any) { fs.writeFileSync(f + '.tmp', JSON.stringify(v)); fs.renameSync(f + '.tmp', f) }
 const readAllow = (): string[] => readJSON(allowFile()) || []
 
+/** custom title bar: the renderer draws it, the OS keeps only the window buttons (Window Controls Overlay)
+ *  whose colors follow the app theme, not the system accent color */
+export const TITLEBAR_HEIGHT = 36
+const TB_COLORS = { light: { color: '#f6f7f9', symbolColor: '#111827' }, dark: { color: '#1f2126', symbolColor: '#e8eaed' } }
+function initialDark() {
+  const theme = readJSON(fileFor('settings'))?.theme
+  return theme === 'dark' || (theme !== 'light' && nativeTheme.shouldUseDarkColors)
+}
+function titleBarOptions(): Electron.BrowserWindowConstructorOptions {
+  if (process.platform === 'darwin') return { titleBarStyle: 'hiddenInset' }
+  return { titleBarStyle: 'hidden', titleBarOverlay: { ...TB_COLORS[initialDark() ? 'dark' : 'light'], height: TITLEBAR_HEIGHT } }
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1280, height: 820, minWidth: 800, minHeight: 500,
     title: 'Tidequill',
+    ...titleBarOptions(),
     icon: resourcePath('icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -92,7 +117,8 @@ app.whenReady().then(() => {
   })
   ipcMain.handle('secure:status', () => ({ available: safeStorage.isEncryptionAvailable(), backend: process.platform === 'linux' ? (safeStorage as any).getSelectedStorageBackend?.() : 'os' }))
   ipcMain.handle('proxy:set', async (_e, proxy: string) => {
-    await session.defaultSession.setProxy(proxy ? { proxyRules: proxy, proxyBypassRules: 'localhost,127.0.0.1,<local>' } : { mode: 'system' })
+    const cfg: Electron.ProxyConfig = proxy ? { proxyRules: proxy, proxyBypassRules: 'localhost,127.0.0.1,<local>' } : { mode: 'system' }
+    await Promise.all([session.defaultSession.setProxy(cfg), apiSession().setProxy(cfg)])
   })
   ipcMain.handle('app:locale', () => app.getLocale())
   ipcMain.handle('app:setLanguage', (_e, l: string) => { lang = l === 'en' ? 'en' : 'zh' })
@@ -104,7 +130,20 @@ app.whenReady().then(() => {
   ipcMain.on('http:start', (e, id: string, req: BridgeRequest) => {
     const ctrl = new AbortController(); inflight.set(id, ctrl)
     const wc = e.sender
-    runBridgeRequest(net.fetch as any, req, ev => { if (!wc.isDestroyed()) wc.send('http:event', id, ev) }, ctrl.signal).finally(() => inflight.delete(id))
+    const t0 = Date.now(); let tHead = 0, tFirst = 0
+    if (HTTP_LOG) apiSession().resolveProxy(req.url).then(p => httpLog({ id, ev: 'proxy', proxy: p, ms: Date.now() - t0 }))
+    runBridgeRequest(apiSession().fetch.bind(apiSession()) as any, req, ev => {
+      if (HTTP_LOG) {
+        if (ev.type === 'head' && !tHead) tHead = Date.now()
+        if (ev.type === 'chunk' && !tFirst) tFirst = Date.now()
+        if (ev.type === 'end' || ev.type === 'error') httpLog({ id, url: req.url.replace(/\?.*/, ''), t0, headMs: tHead ? tHead - t0 : null, firstChunkMs: tFirst ? tFirst - t0 : null, endMs: Date.now() - t0, result: ev.type === 'error' ? ev.code : 'ok', uptimeMs: Math.round(process.uptime() * 1000) })
+      }
+      if (!wc.isDestroyed()) wc.send('http:event', id, ev)
+    }, ctrl.signal).finally(() => inflight.delete(id))
+  })
+  ipcMain.handle('titlebar:theme', (_e, dark: boolean) => {
+    if (process.platform === 'darwin' || !win) return false
+    try { win.setTitleBarOverlay({ ...TB_COLORS[dark ? 'dark' : 'light'], height: TITLEBAR_HEIGHT }); return true } catch { return false }
   })
   ipcMain.on('http:abort', (_e, id: string) => inflight.get(id)?.abort())
 

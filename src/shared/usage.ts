@@ -62,3 +62,30 @@ export function formatCost(c: number | undefined): string {
   if (c == null) return ''
   return c < 0.01 ? `$${c.toFixed(4)}` : `$${c.toFixed(3)}`
 }
+
+/** model context windows (tokens); pattern = substring or /regex/, first match wins. Public figures, editable in Settings > Usage */
+export interface ContextWindow { pattern: string; tokens: number }
+export const DEFAULT_CONTEXT_WINDOWS: ContextWindow[] = [
+  { pattern: 'gpt-4.1', tokens: 1047576 },
+  { pattern: 'gpt-4o', tokens: 128000 },
+  { pattern: 'gpt-5', tokens: 400000 },
+  { pattern: '/^o\\d/', tokens: 200000 },
+  { pattern: 'claude', tokens: 200000 },
+  { pattern: 'gemini', tokens: 1048576 },
+  { pattern: 'deepseek', tokens: 128000 },
+  { pattern: 'grok-4', tokens: 256000 },
+  { pattern: 'grok-3', tokens: 131072 },
+  { pattern: 'qwen-max', tokens: 32768 },
+  { pattern: 'qwen', tokens: 131072 },
+]
+export function findContextWindow(model: string, list: ContextWindow[]): number | undefined {
+  return findPrice(model, list.map(w => ({ pattern: w.pattern, input: w.tokens, output: 0 })))?.input || undefined
+}
+
+/** tokens the next request will roughly carry: system prompt + the last `contextLength` messages + the draft */
+export function contextUsage(msgs: Message[], system: string, contextLength: number, draft: string, window: number | undefined) {
+  const ctx = msgs.slice(-Math.max(1, contextLength))
+  const used = estimateMessages(ctx, system) + (draft ? 4 + estimateTokens(draft) : 0)
+  const ratio = window ? used / window : 0
+  return { used, window, ratio, level: !window ? 'unknown' as const : ratio >= 1 ? 'over' as const : ratio >= 0.8 ? 'near' as const : 'ok' as const }
+}

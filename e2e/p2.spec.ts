@@ -2,7 +2,7 @@ import { test, expect, type ElectronApplication, type Page } from '@playwright/t
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { launch, seedUserData, send } from './helpers'
+import { launch, seedUserData, send, dumpMockTimings } from './helpers'
 // @ts-ignore
 import { startMockServer, REPLY, USAGE, UPDATE_VERSION } from '../tests/mock-server.mjs'
 import { zhCN } from '../src/renderer/locales/zh-CN'
@@ -15,7 +15,7 @@ const SHOTS = path.resolve(__dirname, '..', 'screenshots', 'p2')
 fs.mkdirSync(SHOTS, { recursive: true })
 let mock: any
 test.beforeAll(async () => { mock = await startMockServer() })
-test.afterAll(async () => { await mock.close() })
+test.afterAll(async () => { dumpMockTimings('p2', mock); await mock.close() })
 
 let app: ElectronApplication, page: Page, ud: string
 type Seed = Partial<Parameters<typeof seedUserData>[0]>
@@ -279,7 +279,7 @@ test('Ollama: detect local server and list installed models', async () => {
   await page.getByTestId('ollama-detect').click()
   await expect(page.getByTestId('settings-msg')).toContainText(zhCN.ollamaFound + '3')
   await page.locator('.pitem', { hasText: 'Ollama' }).click()
-  await expect(page.locator('.form textarea').first()).toHaveValue(/llama3\.2:latest/)
+  await expect(page.getByTestId('model-chips')).toContainText('llama3.2:latest')
   // not found case
   await app.close()
   await start({ settings: { providers: [{ id: 'mock', name: 'Mock', type: 'openai', apiKey: 'k', baseURL: mock.url, models: ['mock-ok'] }, { id: 'ollama', name: 'Ollama', type: 'ollama', apiKey: '', baseURL: 'http://127.0.0.1:9', models: [] }] } })

@@ -10,9 +10,9 @@
 
 | Light · 中文 | Dark · 中文 |
 |---|---|
-| ![](screenshots/r2-A/light-zh.png) | ![](screenshots/r2-A/dark-zh.png) |
+| ![](screenshots/r2-B/light-zh.png) | ![](screenshots/r2-B/dark-zh.png) |
 | **Light · English** | **Dark · English** |
-| ![](screenshots/r2-A/light-en.png) | ![](screenshots/r2-A/dark-en.png) |
+| ![](screenshots/r2-B/light-en.png) | ![](screenshots/r2-B/dark-en.png) |
 
 ## Features
 
@@ -44,6 +44,7 @@
   - Backup and restore.
   - Markdown, JSON and PDF export.
   - Optional WebDAV sync.
+- **UI**: custom title bar in theme colors (the window buttons are drawn by the OS), adjustable reading width, a context usage indicator, and grouped sidebar tools.
 - **System**: global shortcut `Ctrl+Shift+Space`, tray, launch at login, and update checks via GitHub Releases.
 
 ## Installation
@@ -65,7 +66,15 @@ Download the Windows installer (`Tidequill-Setup-<version>-x64.exe`) or the port
 
 1. On first launch, pick a provider, enter your API key, then click **Test connection** and **Get started**.
 2. Choose the provider and model at the top. **Deep thinking** turns reasoning on. The gear icon opens conversation settings: parameters, folder, tags and the request view.
-3. Shortcuts: `Ctrl+N` new chat, `Ctrl+K` search, `Ctrl+,` settings, `Esc` close.
+3. Shortcuts: `Ctrl+N` new chat, `Ctrl+K` search, `Ctrl+,` settings, `Ctrl+D` deep thinking, `Ctrl+Shift+S` conversation settings, `Ctrl+Shift+P` system prompt, `Ctrl+E` export, `Esc` close. Button tooltips also show their shortcuts.
+4. Settings → Providers:
+   - Status badges show the real connection state, and hovering shows the reason.
+   - The API key can be shown or hidden, and "Test connection" reports its result inline.
+   - Models appear as chips you can search, add and remove; unchecked models are hidden from the model selector.
+   - Deleting a provider asks for confirmation.
+   - The default model applies to new chats only.
+5. The bar above the input shows the estimated context the next request will use, against the model window, and warns above 80%. Edit the windows in Settings → Usage.
+6. Settings → Chat → Reading width offers narrow, standard or wide. Import and export are in Settings → Data.
 
 ### Why are input tokens higher than my message?
 A request can also carry:

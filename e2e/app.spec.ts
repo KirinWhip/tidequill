@@ -2,7 +2,7 @@ import { test, expect, type ElectronApplication, type Page } from '@playwright/t
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { launch, seedUserData, send } from './helpers'
+import { launch, seedUserData, send, dumpMockTimings } from './helpers'
 // @ts-ignore
 import { startMockServer, REPLY } from '../tests/mock-server.mjs'
 import { zhCN } from '../src/renderer/locales/zh-CN'
@@ -12,7 +12,7 @@ const SHOTS = path.resolve(__dirname, '..', 'screenshots', 'p1')
 fs.mkdirSync(SHOTS, { recursive: true })
 let mock: any
 test.beforeAll(async () => { mock = await startMockServer() })
-test.afterAll(async () => { await mock.close() })
+test.afterAll(async () => { dumpMockTimings('app', mock); await mock.close() })
 
 let app: ElectronApplication, page: Page, ud: string, consoleErrors: string[]
 async function start(seed: Partial<Parameters<typeof seedUserData>[0]> = {}) {
@@ -126,8 +126,11 @@ test('export JSON and import it back', async () => {
   await expect(page.locator('.msg.assistant .bubble').last()).toContainText(REPLY.join('').trim(), { timeout: 10_000 })
   const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'exp-')), 'export.json')
   await app.evaluate(({ dialog }, p) => { (dialog as any).showSaveDialog = async () => ({ canceled: false, filePath: p }) }, out)
-  await page.getByRole('button', { name: new RegExp(zhCN.exportJson) }).click()
+  // import / export live in Settings > Data (Round 2 · B)
+  await page.keyboard.press('Control+,'); await page.locator('.tabs button[data-tab="data"]').click()
+  await page.getByTestId('export-all').click()
   await expect.poll(() => fs.existsSync(out)).toBe(true)
+  await page.keyboard.press('Escape')
   const data = JSON.parse(fs.readFileSync(out, 'utf8'))
   expect(data.conversations[0].messages[0].content).toBe('导出测试')
   // markdown export of the current conversation
@@ -142,8 +145,10 @@ test('export JSON and import it back', async () => {
   await page.locator('.conv.active .acts button').nth(2).click()
   await expect(page.locator('.conv')).toHaveCount(0)
   await app.evaluate(({ dialog }, p) => { (dialog as any).showOpenDialog = async () => ({ canceled: false, filePaths: [p] }) }, out)
-  await page.getByRole('button', { name: new RegExp(zhCN.importData) }).click()
+  await page.keyboard.press('Control+,'); await page.locator('.tabs button[data-tab="data"]').click()
+  await page.getByTestId('import-data').click()
   await expect(page.locator('.conv')).toHaveCount(1)
+  await page.keyboard.press('Escape')
   await page.locator('.conv').first().click()
   await expect(page.locator('.msg.user').first()).toContainText('导出测试')
 })
@@ -267,7 +272,7 @@ test('deep thinking toggle sends reasoning and shows collapsible reasoning', asy
   await start()
   await page.getByRole('button', { name: new RegExp(zhCN.newChat) }).first().click()
   const toggle = page.getByRole('button', { name: zhCN.reasoning, exact: true })
-  await expect(toggle).toHaveAttribute('title', zhCN.reasoningTip)
+  expect(await toggle.getAttribute('title')).toContain(zhCN.reasoningTip)
   await toggle.click()
   await expect(toggle).toHaveAttribute('aria-pressed', 'true')
   await send(page, '思考一下')

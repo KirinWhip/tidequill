@@ -7,6 +7,8 @@ export interface ProviderConfig {
   apiKey: string
   baseURL: string
   models: string[]
+  /** models unchecked in Settings > Providers: kept in the list but hidden from the model selector */
+  hiddenModels?: string[]
 }
 
 export interface Attachment {
@@ -111,6 +113,8 @@ export interface Settings {
   toolsEnabled: boolean
   builtinTools: boolean // send builtin demo tools (time / calculator); off by default to save tokens
   autoTitle: boolean // summarize a short title after the first reply
+  readingWidth?: 'narrow' | 'standard' | 'wide'
+  contextWindows?: import('./usage').ContextWindow[]
   codeLineNumbers: boolean
   codeCollapseLines: number // collapse code blocks longer than this (0 = never)
   topP: number

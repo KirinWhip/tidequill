@@ -44,7 +44,7 @@ export function ModelSelector({ providers, providerId, model, onChange }: { prov
     document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h)
   }, [open])
 
-  const all = useMemo(() => [...new Set([...(provider?.models || []), ...remote])], [provider, remote])
+  const all = useMemo(() => [...new Set([...(provider?.models || []), ...remote])].filter(m => !provider?.hiddenModels?.includes(m)), [provider, remote])
   const list = useMemo(() => { const s = q.trim().toLowerCase(); return s ? all.filter(m => m.toLowerCase().includes(s)) : all }, [all, q])
   const custom = q.trim() && !all.includes(q.trim()) ? q.trim() : ''
   const options = custom ? [custom, ...list] : list

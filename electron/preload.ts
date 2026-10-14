@@ -8,6 +8,8 @@ const api = {
   kvSet: (k: string, v: any) => ipcRenderer.invoke('kv:set', k, v),
   secureStatus: () => ipcRenderer.invoke('secure:status'),
   setProxy: (p: string) => ipcRenderer.invoke('proxy:set', p),
+  setTitleBarTheme: (dark: boolean) => ipcRenderer.invoke('titlebar:theme', dark),
+  platform: process.platform,
   locale: () => ipcRenderer.invoke('app:locale'),
   setLanguage: (l: string) => ipcRenderer.invoke('app:setLanguage', l),
   saveFile: (name: string, content: string) => ipcRenderer.invoke('file:save', name, content),

@@ -4,7 +4,7 @@ import {
   RefreshCw, Trash2, Volume2, VolumeX, Bot, User, AlertTriangle, ChevronRight, ChevronLeft, GitBranch, Quote, Coins, Loader2, FileJson, Printer, Settings2,
 } from 'lucide-react'
 import { branchInfo } from '../../shared/branches'
-import { conversationUsage, costOf, findPrice, formatCost } from '../../shared/usage'
+import { contextUsage, conversationUsage, costOf, DEFAULT_CONTEXT_WINDOWS, findContextWindow, findPrice, formatCost } from '../../shared/usage'
 import type { Attachment, Conversation, Message, PromptItem, Settings } from '../../shared/types'
 import { useT } from '../i18n'
 import { Markdown, useCopy } from './Markdown'
@@ -27,6 +27,19 @@ export function ChatView({ conv, convs, settings, dark, busy, prompts, onSend, o
   const [quote, setQuote] = useState('')
   useEffect(() => { if (!exportOpen) return; const h = () => setExportOpen(false); setTimeout(() => window.addEventListener('click', h), 0); return () => window.removeEventListener('click', h) }, [exportOpen])
   const total = conversationUsage(conv.messages, settings.prices)
+  // header shortcuts (also shown in tooltips and Settings > Shortcuts)
+  const hk = useRef({ onPatch, onConvSettings, setShowSys, setExportOpen }); hk.current = { onPatch, onConvSettings, setShowSys, setExportOpen }
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return
+      const k = e.key.toLowerCase()
+      if (k === 'd' && !e.shiftKey) { e.preventDefault(); hk.current.onPatch(c => ({ ...c, reasoning: !c.reasoning })) }
+      else if (k === 's' && e.shiftKey) { e.preventDefault(); hk.current.onConvSettings() }
+      else if (k === 'p' && e.shiftKey) { e.preventDefault(); hk.current.setShowSys(x => !x) }
+      else if (k === 'e' && !e.shiftKey) { e.preventDefault(); hk.current.setExportOpen(x => !x) }
+    }
+    window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h)
+  }, [])
   const noPrice = settings.showUsage && !!conv.model && !findPrice(conv.model, settings.prices)
   const parent = conv.forkOf ? convs.find(c => c.id === conv.forkOf!.id) : undefined
   const listRef = useRef<HTMLDivElement>(null)
@@ -36,16 +49,16 @@ export function ChatView({ conv, convs, settings, dark, busy, prompts, onSend, o
   const toolResults = new Map(conv.messages.filter(m => m.role === 'tool').map(m => [m.toolCallId, m.content]))
 
   return (
-    <div className="chat">
+    <div className={'chat rw-' + (settings.readingWidth || 'standard')}>
       <header className="chathead">
         <span className="ctitle">{conv.title}</span>
         <ModelSelector providers={settings.providers} providerId={conv.providerId} model={conv.model} onChange={(providerId, model) => onPatch(c => ({ ...c, providerId, model }))} />
-        <button className={'toggle' + (conv.reasoning ? ' on' : '')} aria-pressed={!!conv.reasoning} title={t.reasoningTip} aria-label={t.reasoning}
+        <button className={'toggle' + (conv.reasoning ? ' on' : '')} aria-pressed={!!conv.reasoning} title={`${t.reasoning} (${t.key_ctrl}+D)\n${t.reasoningTip}`} aria-label={t.reasoning}
           onClick={() => onPatch(c => ({ ...c, reasoning: !c.reasoning }))}><Brain size={15} /><span>{t.reasoning}</span></button>
-        <button className={'icon-btn' + (showSys ? ' active' : '')} title={t.systemPrompt} aria-label={t.systemPrompt} onClick={() => setShowSys(!showSys)}><ScrollText size={17} /></button>
-        <button className="icon-btn" title={t.convSettings} aria-label={t.convSettings} onClick={onConvSettings}><Settings2 size={17} /></button>
+        <button className={'icon-btn' + (showSys ? ' active' : '')} title={`${t.systemPrompt} (${t.key_ctrl}+Shift+P)`} aria-label={t.systemPrompt} onClick={() => setShowSys(!showSys)}><ScrollText size={17} /></button>
+        <button className="icon-btn" title={`${t.convSettings} (${t.key_ctrl}+Shift+S)`} aria-label={t.convSettings} onClick={onConvSettings}><Settings2 size={17} /></button>
         <span className="exportwrap">
-          <button className={'icon-btn' + (exportOpen ? ' active' : '')} title={t.exportAs} aria-label={t.exportAs} onClick={() => setExportOpen(!exportOpen)}><FileDown size={17} /></button>
+          <button className={'icon-btn' + (exportOpen ? ' active' : '')} title={`${t.exportAs} (${t.key_ctrl}+E)`} aria-label={t.exportAs} onClick={() => setExportOpen(!exportOpen)}><FileDown size={17} /></button>
           {exportOpen && <div className="ctxmenu dropdown" role="menu">
             <button role="menuitem" onClick={() => onExport('md')}><FileText size={14} />{t.exportMd}</button>
             <button role="menuitem" onClick={() => onExport('json')}><FileJson size={14} />{t.exportJsonConv}</button>
@@ -109,8 +122,22 @@ function Composer({ conv, settings, busy, prompts, quote, onClearQuote, onSend, 
   const P = conv.params || {}
   const setP = (p: Partial<NonNullable<Conversation['params']>>) => onPatch(c => ({ ...c, params: { ...(c.params || {}), ...p } }))
 
+  const ctxLen = P.contextLength ?? settings.contextLength
+  const cu = contextUsage(conv.messages, conv.systemPrompt, ctxLen, [quote, input, ...atts.map(a => a.text)].join('\n'), findContextWindow(conv.model, settings.contextWindows || DEFAULT_CONTEXT_WINDOWS))
+  const fmtK = (n: number) => n >= 10000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
+  const ctxTip = (cu.window ? t.ctxTip.replace('{used}', cu.used.toLocaleString()).replace('{window}', cu.window.toLocaleString()).replace('{n}', String(ctxLen)) : t.ctxTipUnknown.replace('{used}', cu.used.toLocaleString()).replace('{model}', conv.model))
+    + (cu.level === 'near' ? '\n' + t.ctxNear : cu.level === 'over' ? '\n' + t.ctxOver : '')
+
   return (
     <div className="composer" ref={wrap} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); addFiles(e.dataTransfer.files) }}>
+      <div className={'ctxbar ' + cu.level} data-testid="ctx-usage" data-level={cu.level} title={ctxTip} role="meter" aria-label={t.ctxLabel}
+        aria-valuemin={0} aria-valuemax={cu.window || 0} aria-valuenow={cu.used}>
+        <span className="ctxlabel">{t.ctxLabel}</span>
+        {cu.window ? <span className="ctxtrack"><span className="ctxfill" style={{ width: `${Math.min(100, cu.ratio * 100).toFixed(1)}%` }} /></span> : null}
+        <span className="ctxnum">{fmtK(cu.used)}{cu.window ? ` / ${fmtK(cu.window)} (${Math.round(cu.ratio * 100)}%)` : ` / ${t.ctxUnknownWindow}`}</span>
+        {cu.level === 'near' && <span className="ctxwarn" data-testid="ctx-warn">{t.ctxNearShort}</span>}
+        {cu.level === 'over' && <span className="ctxwarn" data-testid="ctx-warn">{t.ctxOverShort}</span>}
+      </div>
       <div className="composer-box">
         {quote && <div className="quotebar"><Quote size={13} /><span className="qtext">{t.quoting}{quote.slice(0, 120)}</span>
           <button className="icon-btn sm" title={t.removeItem} aria-label={t.removeItem} onClick={onClearQuote}><X size={12} /></button></div>}

@@ -34,11 +34,20 @@ export function seedUserData(seed: Seed): string {
   return dir
 }
 
+/** per-launch main-process HTTP timing log (diagnostics, uploaded with the CI report) */
+export const HTTP_LOG_DIR = path.resolve(__dirname, '..', 'test-results', 'http-logs')
+export function httpLogFile(userData: string) { fs.mkdirSync(HTTP_LOG_DIR, { recursive: true }); return path.join(HTTP_LOG_DIR, path.basename(userData) + '.jsonl') }
+
+// diagnostics: event-loop stalls of the Playwright worker (which also hosts the mock / WebDAV servers)
+{ let last = Date.now(); const f = () => path.join(HTTP_LOG_DIR, `worker-lag-${process.pid}.jsonl`)
+  setInterval(() => { const now = Date.now(); if (now - last > 350) { try { fs.mkdirSync(HTTP_LOG_DIR, { recursive: true }); fs.appendFileSync(f(), JSON.stringify({ at: now, ms: now - last - 100 }) + '\n') } catch {} } last = now }, 100).unref() }
+
 export async function launch(userData: string, extraEnv: Record<string, string> = {}): Promise<{ app: ElectronApplication; page: Page; consoleErrors: string[] }> {
   const app = await electron.launch({
     executablePath: appPath(),
-    args: process.platform === 'linux' ? ['--no-sandbox', ...(process.env.E2E_EXTRA_ARGS || '').split(' ').filter(Boolean)] : [],
-    env: { ...process.env, TIDEQUILL_USER_DATA: userData, ELECTRON_ENABLE_LOGGING: '1', ...extraEnv },
+    args: [...(process.platform === 'linux' ? ['--no-sandbox', ...(process.env.E2E_EXTRA_ARGS || '').split(' ').filter(Boolean)] : []),
+      ...(process.env.E2E_NETLOG ? [`--log-net-log=${httpLogFile(userData).replace(/\.jsonl$/, '.netlog.json')}`] : [])],
+    env: { ...process.env, TIDEQUILL_USER_DATA: userData, TIDEQUILL_HTTP_LOG: httpLogFile(userData), ELECTRON_ENABLE_LOGGING: '1', ...extraEnv },
   })
   const page = await app.firstWindow()
   const consoleErrors: string[] = []
@@ -51,4 +60,8 @@ export async function send(page: Page, text: string) {
   const ta = page.locator('.composer textarea')
   await ta.fill(text)
   await ta.press('Enter')
+}
+
+export function dumpMockTimings(name: string, mock: { timings?: any[]; port?: number }) {
+  try { fs.mkdirSync(HTTP_LOG_DIR, { recursive: true }); fs.writeFileSync(path.join(HTTP_LOG_DIR, `mock-${name}-${mock.port}-${Date.now()}.jsonl`), (mock.timings || []).map(x => JSON.stringify(x)).join('\n')) } catch { /* ignore */ }
 }
