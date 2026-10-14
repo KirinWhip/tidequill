@@ -63,6 +63,8 @@ export interface Conversation {
   systemPrompt: string
   pinned: boolean
   reasoning?: boolean // deep thinking toggle
+  tools?: boolean // tool calling toggle (per conversation, 1.0.2+)
+  webSearch?: boolean // web search toggle (per conversation, 1.0.2+)
   titleManual?: boolean // user renamed it: auto-title never overwrites
   params?: ConvParams // per-conversation overrides of global defaults
   folderId?: string
@@ -125,7 +127,10 @@ export interface Settings {
   imageProviderId: string
   imageModel: string
   mcpServers: McpServerConfig[]
+  /** legacy (≤1.0.1 global tools toggle); 1.0.2+ uses chatDefaults + per-conversation flags */
   toolsEnabled: boolean
+  /** initial toggle state of new conversations (Settings > Chat); all off by default */
+  chatDefaults?: import('./chatflags').ChatDefaults
   builtinTools: boolean // send builtin demo tools (time / calculator); off by default to save tokens
   autoTitle: boolean // summarize a short title after the first reply
   webSearch?: import('./websearch').WebSearchConfig

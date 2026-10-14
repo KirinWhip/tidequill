@@ -273,7 +273,7 @@ test('deep thinking toggle sends reasoning and shows collapsible reasoning', asy
   await start()
   await page.getByRole('button', { name: new RegExp(zhCN.newChat) }).first().click()
   const toggle = page.getByRole('button', { name: zhCN.reasoning, exact: true })
-  expect(await toggle.getAttribute('title')).toContain(zhCN.reasoningTip)
+  expect(await toggle.getAttribute('data-tip')).toContain(zhCN.reasoningTip3)
   await toggle.click()
   await expect(toggle).toHaveAttribute('aria-pressed', 'true')
   await send(page, '思考一下')

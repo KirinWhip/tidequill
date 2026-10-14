@@ -50,7 +50,10 @@ export function SettingsPanel({ s, t, onChange, actions, initialTab, priceModel 
         <label>{t.topP}: {s.topP}<input type="range" min={0} max={1} step={0.05} value={s.topP} onChange={e => set({ topP: +e.target.value })} /></label>
         <label>{t.maxTokens}<input type="number" value={s.maxTokens} onChange={e => set({ maxTokens: +e.target.value })} /></label>
         <label>{t.contextLength}: {s.contextLength}<input type="range" min={1} max={100} value={s.contextLength} onChange={e => set({ contextLength: +e.target.value })} /></label>
-        <label className="check"><input type="checkbox" checked={s.toolsEnabled} onChange={e => set({ toolsEnabled: e.target.checked })} /> {t.toolsEnabled}</label>
+        <fieldset className="chatdefaults" data-testid="chat-defaults"><legend>{t.chatDefaultsTitle}</legend>
+          {(['reasoning', 'tools', 'webSearch'] as const).map(k => <label key={k} className="check"><input type="checkbox" data-testid={'default-' + k} checked={!!s.chatDefaults?.[k]}
+            onChange={e => set({ chatDefaults: { reasoning: false, tools: false, webSearch: false, ...(s.chatDefaults || {}), [k]: e.target.checked } })} /> {k === 'reasoning' ? t.reasoning : k === 'tools' ? t.toolsToggle : t.webSearch}</label>)}
+          <div className="meta">{t.chatDefaultsHint}</div></fieldset>
         <label className="check"><input type="checkbox" data-testid="builtin-tools" checked={!!s.builtinTools} onChange={e => set({ builtinTools: e.target.checked })} /> {t.sendBuiltinTools}</label>
         <div className="meta">{t.builtinToolsHint}</div>
         <label className="check"><input type="checkbox" data-testid="auto-title" checked={s.autoTitle !== false} onChange={e => set({ autoTitle: e.target.checked })} /> {t.autoTitle}</label>
@@ -209,7 +212,7 @@ export function ToolsPanel({ s, t, onChange }: { s: Settings; t: Dict; onChange(
   return (
     <div className="panel">
       <h2>{t.tools}</h2>
-      <label className="check"><input type="checkbox" checked={s.toolsEnabled} onChange={e => onChange({ ...s, toolsEnabled: e.target.checked })} /> {t.toolsEnabled}</label>
+      <label className="check"><input type="checkbox" checked={!!s.chatDefaults?.tools} onChange={e => onChange({ ...s, chatDefaults: { ...{ reasoning: false, webSearch: false }, ...(s.chatDefaults || {}), tools: e.target.checked } })} /> {t.chatDefaultsTitle}: {t.toolsToggle}</label>
       <h3>{t.mcpServers}</h3>
       {s.mcpServers.map(m => { const st = status.mcp.find((x: any) => x.id === m.id); return (
         <div key={m.id} className="card form" data-testid="mcp-card">

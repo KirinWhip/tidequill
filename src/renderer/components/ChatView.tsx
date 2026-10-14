@@ -13,6 +13,7 @@ import { branchInfo } from '../../shared/branches'
 import { contextUsage, conversationUsage, costOf, DEFAULT_CONTEXT_WINDOWS, findContextWindow, findPrice, formatCost } from '../../shared/usage'
 import type { Attachment, Conversation, Message, PromptItem, Settings } from '../../shared/types'
 import { useT } from '../i18n'
+import { convFlags } from '../../shared/chatflags'
 import { Markdown, useCopy } from './Markdown'
 import { ModelSelector } from './ModelSelector'
 import { extractText, readAsDataURL, kindOf, UNSUPPORTED } from '../files'
@@ -25,9 +26,12 @@ interface Props {
   /** open Settings > usage price table for this model */
   onPriceSetup?(model: string): void
   onFork(id: string): void; onSwitchBranch(pos: number, idx: number): void; onOpenConv(id: string): void; onConvSettings(): void
+  /** open Settings at a tab (e.g. web search setup) */
+  onOpenSettings?(tab: string): void
 }
 
-export function ChatView({ conv, convs, settings, dark, busy, searching, onChooseCompare, prompts, onSend, onStop, onRegenerate, onEditResend, onDeleteMsg, onPatch, onExport, onSettings, onFork, onSwitchBranch, onOpenConv, onConvSettings, onPriceSetup }: Props) {
+export function ChatView({ conv, convs, settings, dark, busy, searching, onChooseCompare, prompts, onSend, onStop, onRegenerate, onEditResend, onDeleteMsg, onPatch, onExport, onSettings, onFork, onSwitchBranch, onOpenConv, onConvSettings, onPriceSetup, onOpenSettings }: Props) {
+  const flags = convFlags(conv, settings)
   const t = useT()
   const [showSys, setShowSys] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
@@ -37,12 +41,12 @@ export function ChatView({ conv, convs, settings, dark, busy, searching, onChoos
   // header shortcuts (also shown in tooltips and Settings > Shortcuts)
   const [findOpen, setFindOpen] = useState(false)
   const [compareOpen, setCompareOpen] = useState(!!conv.compareModels?.length)
-  const hk = useRef({ onPatch, onConvSettings, setShowSys, setExportOpen, setFindOpen }); hk.current = { onPatch, onConvSettings, setShowSys, setExportOpen, setFindOpen }
+  const hk = useRef({ onPatch, onConvSettings, setShowSys, setExportOpen, setFindOpen, reasoning: flags.reasoning }); hk.current = { onPatch, onConvSettings, setShowSys, setExportOpen, setFindOpen, reasoning: flags.reasoning }
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.altKey) return
       const k = e.key.toLowerCase()
-      if (k === 'd' && !e.shiftKey) { e.preventDefault(); hk.current.onPatch(c => ({ ...c, reasoning: !c.reasoning })) }
+      if (k === 'd' && !e.shiftKey) { e.preventDefault(); { const v = !hk.current.reasoning; hk.current.onPatch(c => ({ ...c, reasoning: v })) } }
       else if (k === 's' && e.shiftKey) { e.preventDefault(); hk.current.onConvSettings() }
       else if (k === 'p' && e.shiftKey) { e.preventDefault(); hk.current.setShowSys(x => !x) }
       else if (k === 'e' && !e.shiftKey) { e.preventDefault(); hk.current.setExportOpen(x => !x) }
@@ -63,8 +67,8 @@ export function ChatView({ conv, convs, settings, dark, busy, searching, onChoos
       <header className="chathead">
         <span className="ctitle">{conv.title}</span>
         <ModelSelector providers={settings.providers} providerId={conv.providerId} model={conv.model} onChange={(providerId, model) => onPatch(c => ({ ...c, providerId, model }))} />
-        <button className={'toggle' + (conv.reasoning ? ' on' : '')} aria-pressed={!!conv.reasoning} title={`${t.reasoning} (${t.key_ctrl}+D)\n${t.reasoningTip}`} aria-label={t.reasoning}
-          onClick={() => onPatch(c => ({ ...c, reasoning: !c.reasoning }))}><Brain size={15} /><span>{t.reasoning}</span></button>
+        <button className={'toggle tip-below' + (flags.reasoning ? ' on' : '')} data-testid="reasoning-toggle" aria-pressed={flags.reasoning} data-tip={`${t.reasoning} · ${flags.reasoning ? t.onState : t.offState} (${t.key_ctrl}+D)\n${t.reasoningTip3}`} aria-label={t.reasoning}
+          aria-description={t.reasoningTip3} onClick={() => onPatch(c => ({ ...c, reasoning: !flags.reasoning }))}><Brain size={15} /><span>{t.reasoning}</span></button>
         <button className={'icon-btn' + (showSys ? ' active' : '')} title={`${t.systemPrompt} (${t.key_ctrl}+Shift+P)`} aria-label={t.systemPrompt} onClick={() => setShowSys(!showSys)}><ScrollText size={17} /></button>
         <button className={'icon-btn' + (findOpen ? ' active' : '')} data-testid="find-btn" title={`${t.find} (${t.key_ctrl}+F)`} aria-label={t.find} onClick={() => setFindOpen(!findOpen)}><Search size={17} /></button>
         <button className={'icon-btn' + (compareOpen || conv.compareModels?.length ? ' active' : '')} data-testid="compare-btn" title={`${t.compare}\n${t.compareTip}`} aria-label={t.compare} onClick={() => setCompareOpen(!compareOpen)}><Columns2 size={17} /></button>
@@ -96,7 +100,7 @@ export function ChatView({ conv, convs, settings, dark, busy, searching, onChoos
             const last = m.compareGroup ? m.compareGroup === visible[visible.length - 1]?.compareGroup : i === visible.length - 1
             return <MessageItem key={m.id} m={m} dark={dark} streaming={busy && !!last && m.role === 'assistant'} toolResults={toolResults}
               branch={m.compareGroup ? null : branchInfo(conv, pos)} onBranch={idx => onSwitchBranch(pos, idx)} settings={settings}
-              onRegenerate={() => onRegenerate(m.id)} onEditResend={c => onEditResend(m.id, c)} onDelete={() => onDeleteMsg(m.id)} disabled={busy}
+              onRegenerate={() => onRegenerate(m.id)} onEditResend={c => onEditResend(m.id, c)} onDelete={() => onDeleteMsg(m.id)} disabled={busy} onDisableSearch={() => onPatch(c => ({ ...c, webSearch: false }))}
               onFork={() => onFork(m.id)} onQuote={() => setQuote(m.content)} onPriceSetup={onPriceSetup} onChoose={() => onChooseCompare?.(m.id)} />
           }
           return g[0].compareGroup
@@ -105,7 +109,7 @@ export function ChatView({ conv, convs, settings, dark, busy, searching, onChoos
         })}
         {searching && <div className="status-line searching" data-testid="searching"><Loader2 size={13} className="spin" />{t.searching}</div>}
       </div>
-      <Composer conv={conv} settings={settings} busy={busy} prompts={prompts} quote={quote} onClearQuote={() => setQuote('')} onSend={(a, b, c) => { onSend(a, b, c, quote || undefined); setQuote('') }} onStop={onStop} onSettings={onSettings} onPatch={onPatch} />
+      <Composer conv={conv} settings={settings} onOpenSettings={onOpenSettings} busy={busy} prompts={prompts} quote={quote} onClearQuote={() => setQuote('')} onSend={(a, b, c) => { onSend(a, b, c, quote || undefined); setQuote('') }} onStop={onStop} onSettings={onSettings} onPatch={onPatch} />
     </div>
   )
 }
@@ -190,7 +194,7 @@ function CompareBar({ conv, settings, disabled, onPatch, onClose }: { conv: Conv
   )
 }
 
-function Composer({ conv, settings, busy, prompts, quote, onClearQuote, onSend, onStop, onSettings, onPatch }: { conv: Conversation; settings: Settings; busy: boolean; prompts: PromptItem[]; quote: string; onClearQuote(): void; onSend: Props['onSend']; onStop(): void; onSettings(s: Settings): void; onPatch: Props['onPatch'] }) {
+function Composer({ conv, settings, busy, prompts, quote, onClearQuote, onSend, onStop, onSettings, onPatch, onOpenSettings }: { onOpenSettings?(tab: string): void; conv: Conversation; settings: Settings; busy: boolean; prompts: PromptItem[]; quote: string; onClearQuote(): void; onSend: Props['onSend']; onStop(): void; onSettings(s: Settings): void; onPatch: Props['onPatch'] }) {
   const t = useT()
   const [input, setInput] = useState('')
   const [images, setImages] = useState<string[]>([])
@@ -272,7 +276,7 @@ function Composer({ conv, settings, busy, prompts, quote, onClearQuote, onSend, 
     if (busy || (!input.trim() && !images.length && !atts.length)) return
     onSend(input, images, atts); setInput(''); setImages([]); setAtts([])
   }
-  const set = (p: Partial<Settings>) => onSettings({ ...settings, ...p })
+  const flags = convFlags(conv, settings)
   const P = conv.params || {}
   const setP = (p: Partial<NonNullable<Conversation['params']>>) => onPatch(c => ({ ...c, params: { ...(c.params || {}), ...p } }))
 
@@ -320,11 +324,14 @@ function Composer({ conv, settings, busy, prompts, quote, onClearQuote, onSend, 
           <button className="icon-btn" title={t.attach} aria-label={t.attach} onClick={() => fileRef.current?.click()}><Paperclip size={17} /></button>
           <button className={'icon-btn tb-pop-trigger' + (pop === 'prompts' ? ' active' : '')} title={t.prompts} aria-label={t.prompts} onClick={() => setPop(pop === 'prompts' ? '' : 'prompts')}><BookOpen size={17} /></button>
           <button className={'icon-btn tb-pop-trigger' + (pop === 'params' ? ' active' : '')} title={t.params} aria-label={t.params} onClick={() => setPop(pop === 'params' ? '' : 'params')}><SlidersHorizontal size={17} /></button>
-          <button className={'toggle sm' + (settings.toolsEnabled ? ' on' : '')} aria-pressed={settings.toolsEnabled} title={t.toolsToggleTip} aria-label={t.toolsToggle}
-            onClick={() => set({ toolsEnabled: !settings.toolsEnabled })}><Wrench size={14} /><span>{t.toolsToggle}</span></button>
-          <button className={'toggle sm' + (settings.webSearch?.enabled ? ' on' : '')} data-testid="search-toggle" aria-pressed={!!settings.webSearch?.enabled} aria-label={t.webSearch}
-            title={`${t.webSearch} · ${t[('sp_' + (settings.webSearch?.provider || 'tavily')) as 'sp_tavily']}\n${t.webSearchTip}`}
-            onClick={() => set({ webSearch: { ...settings.webSearch!, enabled: !settings.webSearch?.enabled } })}><Globe size={14} /><span>{t.webSearch}</span></button>
+          <button className={'toggle sm' + (flags.tools ? ' on' : '')} data-testid="tools-toggle" aria-pressed={flags.tools} data-tip={`${t.toolsToggle} · ${flags.tools ? t.onState : t.offState}\n${t.toolsTip3}`} aria-label={t.toolsToggle}
+            aria-description={t.toolsTip3} onClick={() => onPatch(c => ({ ...c, tools: !flags.tools }))}><Wrench size={14} /><span>{t.toolsToggle}</span></button>
+          <span className="searchtoggle-wrap">
+            <button className={'toggle sm' + (flags.webSearchActive ? ' on' : '')} data-testid="search-toggle" aria-pressed={flags.webSearchActive} aria-label={t.webSearch} disabled={!flags.searchReady}
+              data-tip={flags.searchReady ? `${t.webSearch} · ${t[('sp_' + (settings.webSearch?.provider || 'tavily')) as 'sp_tavily']} · ${flags.webSearchActive ? t.onState : t.offState}\n${t.webSearchTip3}` : `${t.searchNeedsKey}\n${t.webSearchTip3}`}
+              aria-description={flags.searchReady ? t.webSearchTip3 : t.searchNeedsKey} onClick={() => flags.searchReady && onPatch(c => ({ ...c, webSearch: !flags.webSearch }))}><Globe size={14} /><span>{t.webSearch}</span></button>
+            {!flags.searchReady && <button className="linkbtn searchsetup" data-testid="search-setup" title={t.searchNeedsKey} onClick={() => onOpenSettings?.('searchTab')}>{t.searchGoSetup}</button>}
+          </span>
           {stt?.enabled && (recState === 'rec'
             ? <button className="icon-btn recording" data-testid="mic-btn" data-state="rec" title={t.voiceStop} aria-label={t.voiceStop} onClick={stopRec}><Square size={13} fill="currentColor" /></button>
             : <button className="icon-btn" data-testid="mic-btn" data-state={recState || 'idle'} disabled={recState === 'busy'} title={`${t.voice} · ${t.voiceStart}`} aria-label={t.voiceStart} onClick={startRec}><Mic size={17} /></button>)}
@@ -359,7 +366,8 @@ function AttIcon({ kind }: { kind?: string }) {
 
 let speaking: string | null = null
 
-function MessageItem({ m, dark, streaming, toolResults, onRegenerate, onEditResend, onDelete, disabled, branch, onBranch, onFork, onQuote, settings, onPriceSetup, onChoose }: {
+function MessageItem({ m, dark, streaming, toolResults, onRegenerate, onEditResend, onDelete, disabled, branch, onBranch, onFork, onQuote, settings, onPriceSetup, onChoose, onDisableSearch }: {
+  onDisableSearch?(): void
   m: Message; dark: boolean; streaming: boolean; toolResults: Map<any, string>; onRegenerate(): void; onEditResend(c: string): void; onDelete(): void; disabled: boolean
   branch: { index: number; total: number } | null; onBranch(i: number): void; onFork(): void; onQuote(): void; settings: Settings; onPriceSetup?(model: string): void; onChoose?(): void
 }) {
@@ -388,7 +396,12 @@ function MessageItem({ m, dark, streaming, toolResults, onRegenerate, onEditRese
           {m.images?.map((d, i) => <img key={i} className="msgimg" src={d} alt={t.image} />)}
           {m.compareGroup && <div className="cmphead"><Bot size={13} /><b>{m.model}</b>{m.compareChosen && <span className="badge ok" title={t.compareChosenTip}>{t.compareChosen}</span>}</div>}
           {m.attachments?.map((a, i) => <div key={i} className="filechip" data-kind={a.kind}><AttIcon kind={a.kind} /><span className="fname">{a.name}</span><span className="meta">{a.text.length} {t.chars}</span>{a.truncated && <span className="badge warn">{t.attTruncated}</span>}</div>)}
-          {m.searchError && <div className="searchnote" data-testid="search-error"><Globe size={13} /><span>{t.searchFailed}{m.searchError}</span></div>}
+          {m.searchError && <details className="searchnote" data-testid="search-error">
+            <summary><Globe size={12} />{t.searchFailedShort}<ChevronRight size={12} className="chev" /></summary>
+            <div className="searchnote-body"><span className="meta">{m.searchError}</span>
+              <span className="row"><button className="btn sm" data-testid="search-retry" disabled={disabled} onClick={onRegenerate}><RefreshCw size={12} />{t.retrySearch}</button>
+                {onDisableSearch && <button className="btn sm" data-testid="search-disable" onClick={onDisableSearch}><Globe size={12} />{t.disableSearch}</button>}</span></div>
+          </details>}
           {m.reasoning && <details className="reasoning" open={streaming && !m.content}>
             <summary><ChevronRight size={14} className="chev" /><Brain size={14} />{streaming && !m.content ? t.reasoningRunning : t.reasoningContent}</summary>
             <div className="reasoning-body">{m.reasoning}</div>

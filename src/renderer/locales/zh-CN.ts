@@ -120,5 +120,17 @@ export const zhCN = {
   mcpCommandLine: '完整命令行', mcpEnvKeys: '环境变量', approveRun: '确认并启动', mcpNeedsApproval: '命令未确认，未启动', addMcpTitle: '添加 MCP 服务器',
   grants: '授权管理', grantsHint: '“始终允许”只对某个来源（插件或 MCP 服务器）的某个工具生效。可以在这里逐项撤销，或全部撤销。', grantTools: '始终允许的工具', grantPlugins: '已信任的插件', grantMcp: '已确认的 MCP 命令', revokeAll: '全部撤销', source: '来源', tool: '工具',
   storageRestored: '检测到数据文件“{key}”已损坏，已从备份 {backup} 自动恢复。损坏的文件已另存为 {file}。', storageReset: '检测到数据文件“{key}”已损坏且没有可用备份，已重置为空。损坏的文件已另存为 {file}。', gotIt: '知道了',
+  reasoningTip3: "深度思考：让模型先推理再回答，适合复杂问题。回答会更慢，并额外消耗较多 token（思考内容按输出 token 计费）。",
+  toolsTip3: "工具：允许模型调用插件和 MCP 工具（每次调用都要确认）。工具说明会随每次请求发送，增加输入 token；调用工具会多一轮请求，回复更慢。",
+  webSearchTip3: "联网搜索：发送前先搜索你的问题，把结果交给模型。每次多一次搜索请求（更慢），搜索结果会增加输入 token；部分搜索服务按次收费。",
+  searchNeedsKey: "未配置搜索服务的密钥，无法开启联网搜索。",
+  searchGoSetup: "去设置填写",
+  searchFailedShort: "联网搜索失败，本次回复没有使用搜索结果",
+  retrySearch: "重试",
+  disableSearch: "关闭联网搜索",
+  chatDefaultsTitle: "新对话默认开启",
+  chatDefaultsHint: "只影响之后新建的对话；每个对话会记住自己的开关状态。默认全部关闭。",
+  onState: "已开启",
+  offState: "已关闭",
 }
 export type Dict = typeof zhCN

@@ -44,7 +44,7 @@ const showcase = (zh: boolean) => [
 
 for (const [lang, theme] of [['zh', 'light'], ['zh', 'dark'], ['en', 'light'], ['en', 'dark']] as const) {
   test(`overview ${theme}-${lang}`, async () => {
-    ;({ app, page } = await launch(seedUserData({ mockUrl: mock.url, language: lang, theme, conversations: showcase(lang === 'zh'), settings: { webSearch: searchCfg({ enabled: true, tavilyKey: 'tvly-x' }) } })))
+    ;({ app, page } = await launch(seedUserData({ mockUrl: mock.url, language: lang, theme, conversations: showcase(lang === 'zh'), settings: { webSearch: searchCfg({ enabled: true, tavilyKey: 'tvly-x' }), chatDefaults: { reasoning: false, tools: true, webSearch: true } } })))
     await page.locator('.conv').first().click()
     await expect(page.locator('a.cite')).toHaveCount(3)
     await expect(page.getByTestId('search-toggle')).toHaveAttribute('aria-pressed', 'true')
@@ -99,13 +99,42 @@ test('web search: settings, key encrypted on disk, toolbar toggle, request via m
   await reply.hover()
   await page.locator('a.cite[data-cite="1"]').last().hover()
   await shot('web-search-citations')
-  // failure is reported and the reply still arrives without results
+  // A4: an actual search failure (rejected key) -> small collapsible notice in that reply only, with retry / turn off
+  await openSettings('searchTab')
+  await page.getByTestId('search-key').fill('wrong')
+  await page.keyboard.press('Escape')
+  const nSearch = mock.searches.length
+  await send(page, '再问一次')
+  const last = page.locator('.msg.assistant').last()
+  await expect(last).toContainText('Hello from mock')
+  const note = last.getByTestId('search-error')
+  await expect(note.locator('summary')).toHaveText(zhCN.searchFailedShort)
+  await expect(note.getByTestId('search-retry')).toBeHidden() // collapsed by default
+  // the earlier successful reply has no notice
+  await expect(page.locator('.msg.assistant').first().getByTestId('search-error')).toHaveCount(0)
+  await note.locator('summary').click()
+  await expect(note.getByTestId('search-retry')).toBeVisible()
+  await note.getByTestId('search-retry').click()
+  await expect.poll(() => mock.searches.length).toBeGreaterThan(nSearch + 1)
+  await expect(page.locator('.msg.assistant').last()).toContainText('Hello from mock')
+  await page.locator('.msg.assistant').last().getByTestId('search-error').locator('summary').click()
+  await page.locator('.msg.assistant').last().getByTestId('search-disable').click()
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+  // A4: provider without a key -> toggle disabled with a "去设置填写" link; no search, no warning line on replies
   await openSettings('searchTab')
   await page.locator('.seg button[data-provider="brave"]').click()
   await page.keyboard.press('Escape')
-  await send(page, '再问一次')
-  await expect(page.locator('.msg.assistant').last().getByTestId('search-error')).toContainText(zhCN.searchErr_nokey)
+  await expect(toggle).toBeDisabled()
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.getByTestId('search-setup')).toHaveText(zhCN.searchGoSetup)
+  const nBefore = mock.searches.length
+  await send(page, '没有密钥时')
   await expect(page.locator('.msg.assistant').last()).toContainText('Hello from mock')
+  await expect(page.locator('.msg.assistant').last().getByTestId('search-error')).toHaveCount(0)
+  expect(mock.searches.length).toBe(nBefore)
+  await toggle.hover({ force: true })
+  await page.getByTestId('search-setup').click()
+  await expect(page.locator('.tabs button[data-tab="searchTab"]')).toHaveClass(/on/)
 })
 
 test('attachments: PDF text extraction (pdf.js worker, all pages)', async () => {
