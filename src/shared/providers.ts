@@ -1,5 +1,6 @@
 import type { Message, ProviderConfig, ToolCall, ToolDef } from './types'
 import { ProviderError, classifyError, errorDetail, toProviderError } from './errors'
+import { summarizeRequest } from './reqdebug'
 
 export interface ChatOptions {
   model: string
@@ -20,6 +21,8 @@ export interface ChatOptions {
 export interface Usage { input: number; output: number; estimated?: boolean }
 export interface ChatResult {
   text: string
+  /** Anthropic: thinking blocks with signatures (sent back in tool-use turns) */
+  thinkingBlocks?: import('./types').ThinkingBlock[]
   usage?: Usage
   reasoning?: string
   toolCalls: ToolCall[]
@@ -56,7 +59,7 @@ function parseDataURL(d: string): { mime: string; data: string } {
 }
 
 // ---------- OpenAI compatible (also used for Ollama via /v1) ----------
-export function toOpenAIMessages(system: string, msgs: Message[], passReasoning = false): any[] {
+export function toOpenAIMessages(system: string, msgs: Message[], passReasoning = false, wire: (n: string) => string = n => n): any[] {
   const out: any[] = []
   if (system) out.push({ role: 'system', content: system })
   for (const m of msgs) {
@@ -66,7 +69,7 @@ export function toOpenAIMessages(system: string, msgs: Message[], passReasoning 
       const a: any = { role: 'assistant', content: m.content || null }
       // DeepSeek thinking mode + tools: reasoning_content of earlier turns must be passed back (else HTTP 400)
       if (passReasoning && m.reasoning) a.reasoning_content = m.reasoning
-      if (m.toolCalls?.length) a.tool_calls = m.toolCalls.map(c => ({ id: c.id, type: 'function', function: { name: c.name, arguments: JSON.stringify(c.args) } }))
+      if (m.toolCalls?.length) a.tool_calls = m.toolCalls.map(c => ({ id: c.id, type: 'function', function: { name: wire(c.name), arguments: JSON.stringify(c.args) } }))
       out.push(a); continue
     }
     if (m.images?.length) {
@@ -93,19 +96,20 @@ export function openAIReasoningParams(p: ProviderConfig, o: Pick<ChatOptions, 'r
 
 export function buildOpenAIRequest(p: ProviderConfig, system: string, msgs: Message[], o: ChatOptions): HttpRequest {
   const base = p.type === 'ollama' ? trim(p.baseURL || defaultBaseURL('ollama')) + '/v1' : trim(p.baseURL || defaultBaseURL('openai'))
-  const body: any = { model: o.model, messages: toOpenAIMessages(system, msgs, isDeepSeekOfficial(p) && !!o.tools?.length), stream: true, temperature: o.temperature }
+  const body: any = { model: o.model, messages: toOpenAIMessages(system, msgs, isDeepSeekOfficial(p) && !!o.tools?.length, toolNameMap(o.tools).wire), stream: true, temperature: o.temperature }
   if (o.maxTokens) body.max_tokens = o.maxTokens
   if (o.topP != null && o.topP < 1) body.top_p = o.topP
   if (p.type === 'openai') body.stream_options = { include_usage: true }
   Object.assign(body, openAIReasoningParams(p, o))
-  if (o.tools?.length) body.tools = o.tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }))
+  const names = toolNameMap(o.tools)
+  if (o.tools?.length) body.tools = o.tools.map(t => ({ type: 'function', function: { name: names.wire(t.name), description: t.description, parameters: objectSchema(t.parameters) } }))
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (p.apiKey) headers.Authorization = `Bearer ${p.apiKey}`
   return { url: base + '/chat/completions', headers, body }
 }
 
 // ---------- Anthropic ----------
-export function toAnthropicMessages(msgs: Message[]): any[] {
+export function toAnthropicMessages(msgs: Message[], wire: (n: string) => string = n => n): any[] {
   const out: any[] = []
   const push = (role: string, block: any) => {
     const last = out[out.length - 1]
@@ -116,40 +120,96 @@ export function toAnthropicMessages(msgs: Message[]): any[] {
     if (m.role === 'system') continue
     if (m.role === 'tool') { push('user', { type: 'tool_result', tool_use_id: m.toolCallId, content: m.content }); continue }
     if (m.role === 'assistant') {
-      if (m.content) push('assistant', { type: 'text', text: m.content })
-      for (const c of m.toolCalls || []) push('assistant', { type: 'tool_use', id: c.id, name: c.name, input: c.args })
+      // thinking blocks go back unchanged (signature) and first, required when the turn called tools with thinking on
+      if (m.toolCalls?.length) for (const b of m.thinkingBlocks || []) push('assistant', b.type === 'redacted_thinking' ? { type: 'redacted_thinking', data: b.data } : { type: 'thinking', thinking: b.thinking || '', signature: b.signature || '' })
+      if (m.content.trim()) push('assistant', { type: 'text', text: m.content })
+      for (const c of m.toolCalls || []) push('assistant', { type: 'tool_use', id: c.id, name: wire(c.name), input: c.args })
       continue
     }
     for (const img of m.images || []) {
       const { mime, data } = parseDataURL(img)
       push('user', { type: 'image', source: { type: 'base64', media_type: mime, data } })
     }
-    push('user', { type: 'text', text: userText(m) || ' ' })
+    // text blocks must contain non-whitespace text (400 otherwise); an image-only message needs no text block
+    const ut = userText(m)
+    if (ut.trim()) push('user', { type: 'text', text: ut })
+    else if (!m.images?.length) push('user', { type: 'text', text: '.' })
   }
   return out
 }
 
+/** Claude model capabilities, from https://platform.claude.com/docs/en/build-with-claude/thinking (per-model table) and
+ *  thinking-troubleshooting: e.g. claude-sonnet-5-5 -> 5.5, claude-opus-4-7 -> 4.7, claude-sonnet-4-5-20250929 -> 4.5; older ids -> 0 */
+export function claudeVersion(model: string): number {
+  const x = /claude-(?:opus|sonnet|haiku|fable|mythos)-(\d+)(?:-(\d+))?/i.exec(model)
+  if (!x) return /mythos/i.test(model) ? 5 : 0
+  return +x[1] + (x[2] && x[2].length <= 2 ? +x[2] / 10 : 0)
+}
+export function claudeCaps(model: string) {
+  const v = claudeVersion(model), fam = (/claude-(opus|sonnet|haiku|fable|mythos)/i.exec(model) || [])[1]?.toLowerCase() || ''
+  // how to turn thinking off on models where it is on by default (5.x): Sonnet 5.5 only accepts between_tools,
+  // Haiku 5.5 / Opus 5 / Sonnet 5 accept disabled, the others cannot turn it off
+  const offType: 'disabled' | 'between_tools' | null = v < 5 ? null : fam === 'sonnet' && v === 5.5 ? 'between_tools' : (fam === 'haiku' && v === 5.5) || (fam === 'opus' && v === 5) || (fam === 'sonnet' && v === 5) ? 'disabled' : null
+  return {
+    version: v,
+    /** non-default temperature / top_p / top_k are rejected with 400 on every request (4.7+ and 5.x) */
+    samplingLocked: v >= 4.7,
+    /** temperature and top_p cannot both be sent (4.5 and later) */
+    oneSampler: v >= 4.5,
+    adaptive: v >= 4.6,
+    /** "enabled" + budget_tokens is rejected with 400 on 4.7+ */
+    enabledOk: v < 4.7,
+    /** thinking is on when no thinking field is sent */
+    defaultOn: v >= 5,
+    offType,
+  }
+}
 /** Claude models that only/also support adaptive thinking (4.6+, 5.x, Mythos) */
-export const claudeAdaptive = (model: string) => /claude-(opus|sonnet|haiku|fable|mythos)-(4-[6-9]|[5-9])|mythos/i.test(model)
+export const claudeAdaptive = (model: string) => claudeCaps(model).adaptive
+
+/** tool names must match ^[a-zA-Z0-9_-]{1,64}$ (Anthropic and OpenAI); returns wire name <-> original name maps */
+export function toolNameMap(tools?: ToolDef[]) {
+  const toWire = new Map<string, string>(), fromWire = new Map<string, string>()
+  for (const t of tools || []) {
+    let w = t.name.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64) || 'tool'
+    for (let i = 2; fromWire.has(w) && fromWire.get(w) !== t.name; i++) w = (w.slice(0, 60) + '_' + i)
+    toWire.set(t.name, w); fromWire.set(w, t.name)
+  }
+  return { wire: (n: string) => toWire.get(n) || n, orig: (n: string) => fromWire.get(n) || n }
+}
+/** JSON schema for a tool's input: must be an object schema */
+export const objectSchema = (p: any) => (p && typeof p === 'object' && p.type === 'object') ? p : { type: 'object', properties: {}, ...(p && typeof p === 'object' && !Array.isArray(p) ? p : {}), ...(p?.type && p.type !== 'object' ? { type: 'object' } : {}) }
 
 export function buildAnthropicRequest(p: ProviderConfig, system: string, msgs: Message[], o: ChatOptions): HttpRequest {
-  const body: any = { model: o.model, messages: toAnthropicMessages(msgs), stream: true, temperature: Math.min(o.temperature, 1), max_tokens: o.maxTokens || 4096 }
-  if (o.topP != null && o.topP < 1) body.top_p = o.topP
+  const caps = claudeCaps(o.model)
+  const names = toolNameMap(o.tools)
+  const body: any = { model: o.model, messages: toAnthropicMessages(msgs, names.wire), stream: true, max_tokens: o.maxTokens || 4096 }
   if (system) body.system = system
+  let thinkingOn = false
   if (o.reasoning) {
-    // https://platform.claude.com/docs/en/build-with-claude/thinking : Claude 4.6+ / 5.x use adaptive thinking
-    // ("enabled" is rejected with 400 on 4.7+); display "summarized" so the thinking text is returned.
-    // Older models: https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking (budget_tokens >= 1024 and < max_tokens)
-    if (claudeAdaptive(o.model)) body.thinking = { type: 'adaptive', display: 'summarized' }
+    // https://platform.claude.com/docs/en/build-with-claude/thinking : 4.6+ / 5.x use adaptive thinking ("enabled" is a 400 on 4.7+);
+    // display "summarized" so the thinking text is returned (the default is "omitted" on 4.7+ / 5.x).
+    // Older models: extended thinking, budget_tokens >= 1024 and < max_tokens.
+    if (caps.adaptive) body.thinking = { type: 'adaptive', display: 'summarized' }
     else {
       const budget = Math.max(1024, Math.min(8192, Math.floor((o.maxTokens || 4096) / 2)))
       body.thinking = { type: 'enabled', budget_tokens: budget }
       body.max_tokens = Math.max(body.max_tokens, budget + 1024)
     }
-    delete body.temperature
-    delete body.top_p
+    thinkingOn = true
+  } else if (caps.defaultOn) {
+    // 5.x think by default: turn it off where the model allows it, otherwise it stays on (adaptive, thinking text omitted)
+    if (caps.offType) body.thinking = { type: caps.offType }
+    else thinkingOn = true
   }
-  if (o.tools?.length) body.tools = o.tools.map(t => ({ name: t.name, description: t.description, input_schema: t.parameters }))
+  // sampling parameters (thinking-troubleshooting): 4.7+ / 5.x reject any non-default temperature / top_p / top_k;
+  // with thinking on, temperature / top_k are incompatible; 4.5+ reject temperature together with top_p.
+  if (!caps.samplingLocked && !thinkingOn) {
+    const topP = o.topP != null && o.topP < 1 ? o.topP : undefined
+    if (topP !== undefined) body.top_p = topP
+    if (topP === undefined || !caps.oneSampler) body.temperature = Math.min(o.temperature, 1)
+  }
+  if (o.tools?.length) body.tools = o.tools.map(t => ({ name: names.wire(t.name), description: t.description, input_schema: objectSchema(t.parameters) }))
   return {
     url: trim(p.baseURL || defaultBaseURL('anthropic')) + '/v1/messages',
     headers: { 'Content-Type': 'application/json', 'x-api-key': p.apiKey, 'anthropic-version': '2023-06-01' },
@@ -227,6 +287,7 @@ export function createAccumulator(type: ProviderConfig['type']) {
   let rDelta = ''
   let usage: Usage | undefined
   const calls = new Map<number | string, { id: string; name: string; argsText: string; args?: any }>()
+  const thinking = new Map<number, import('./types').ThinkingBlock>()
   let n = 0
   return {
     /** feed one SSE data payload; returns new text delta */
@@ -238,6 +299,10 @@ export function createAccumulator(type: ProviderConfig['type']) {
       rDelta = ''
       if (type === 'anthropic') {
         if (j.type === 'content_block_start' && j.content_block?.type === 'tool_use') calls.set(j.index, { id: j.content_block.id, name: j.content_block.name, argsText: '' })
+        if (j.type === 'content_block_start' && j.content_block?.type === 'thinking') thinking.set(j.index, { type: 'thinking', thinking: j.content_block.thinking || '', signature: j.content_block.signature || '' })
+        if (j.type === 'content_block_start' && j.content_block?.type === 'redacted_thinking') thinking.set(j.index, { type: 'redacted_thinking', data: j.content_block.data })
+        if (j.type === 'content_block_delta' && j.delta?.type === 'signature_delta') { const b = thinking.get(j.index); if (b) b.signature = (b.signature || '') + j.delta.signature }
+        if (j.type === 'content_block_delta' && j.delta?.type === 'thinking_delta') { const b = thinking.get(j.index); if (b) b.thinking = (b.thinking || '') + (j.delta.thinking || '') }
         if (j.type === 'content_block_delta') {
           if (j.delta?.type === 'text_delta') delta = j.delta.text
           if (j.delta?.type === 'thinking_delta') rDelta = j.delta.thinking || ''
@@ -283,6 +348,7 @@ export function createAccumulator(type: ProviderConfig['type']) {
         return { id: c.id, name: c.name, args }
       })
       const r: ChatResult = { text, toolCalls }
+      if (thinking.size) r.thinkingBlocks = [...thinking.entries()].sort((a, b) => a[0] - b[0]).map(x => x[1])
       if (reasoning) r.reasoning = reasoning
       if (usage) r.usage = usage
       return r
@@ -299,13 +365,18 @@ export async function streamChat(p: ProviderConfig, system: string, msgs: Messag
     res = await f(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal: o.signal })
   } catch (e: any) {
     if (e?.name === 'AbortError') return { text: '', toolCalls: [] }
-    throw toProviderError(e, 'connect')
+    const pe = toProviderError(e, 'connect'); pe.request = summarizeRequest(req)
+    throw pe
   }
   if (!res.ok || !res.body) {
     const t = await res.text().catch(() => '')
-    throw new ProviderError(classifyError(res.status, t), errorDetail(t), res.status)
+    const pe = new ProviderError(classifyError(res.status, t), errorDetail(t), res.status)
+    pe.body = t.slice(0, 4000); pe.request = summarizeRequest(req)
+    throw pe
   }
   const acc = createAccumulator(p.type)
+  const names = toolNameMap(o.tools)
+  const unwire = (r: ChatResult): ChatResult => ({ ...r, toolCalls: r.toolCalls.map(c => ({ ...c, name: names.orig(c.name) })) })
   try {
     for await (const data of sseEvents(res.body)) {
       const d = acc.feed(data)
@@ -314,12 +385,13 @@ export async function streamChat(p: ProviderConfig, system: string, msgs: Messag
       if (d) o.onDelta?.(d)
     }
   } catch (e: any) {
-    if (e?.name === 'AbortError' || o.signal?.aborted) return acc.result()
+    if (e?.name === 'AbortError' || o.signal?.aborted) return unwire(acc.result())
     const pe = toProviderError(e, 'stream')
-    ;(pe as any).partial = acc.result()
+    ;(pe as any).partial = unwire(acc.result())
+    if (!pe.request) pe.request = summarizeRequest(req)
     throw pe
   }
-  return acc.result()
+  return unwire(acc.result())
 }
 
 async function getJSON(f: typeof fetch, url: string, init?: RequestInit) {

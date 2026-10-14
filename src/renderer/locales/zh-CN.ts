@@ -132,5 +132,10 @@ export const zhCN = {
   chatDefaultsHint: "只影响之后新建的对话；每个对话会记住自己的开关状态。默认全部关闭。",
   onState: "已开启",
   offState: "已关闭",
+  errRetry: "重试",
+  retryNoThinking: "关闭深度思考后重试",
+  copyDetails: "复制详情",
+  errServerBody: "服务器返回的错误",
+  errRequestSummary: "请求摘要（已隐去内容和密钥）",
 }
 export type Dict = typeof zhCN

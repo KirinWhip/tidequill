@@ -14,6 +14,7 @@
 //       GET /models returns 401 for the key "sk-bad".
 // Usage: node tests/mock-server.mjs [port]
 import http from 'node:http'
+import { handleAnthropic } from './mock-anthropic.mjs'
 
 export const REASONING = ['先分析问题，', '再给出答案。']
 export const REPLY = ['你好！', '这是来自', '模拟服务器的', '流式回复。', ' Hello from mock.']
@@ -44,6 +45,7 @@ export function startMockServer(port = 0, opts = {}) {
   const searches = [] // { provider, method, url, headers, body }
   const transcriptions = [] // { contentType, model, language, fileName, fileBytes, auth }
   const timings = [] // receive time of each request (diagnostics)
+  const anthropic = [] // Round 3: requests to the strict Anthropic mock
   const server = http.createServer((req, res) => {
     timings.push({ ev: 'req', at: Date.now(), url: req.url, rport: req.socket.remotePort })
     let body = ''
@@ -119,6 +121,7 @@ export function startMockServer(port = 0, opts = {}) {
         res.writeHead(200, { 'Content-Type': 'application/json' })
         return res.end(JSON.stringify({ data: ['mock-ok', 'mock-401', 'mock-429', 'mock-timeout', 'mock-disconnect', 'mock-tool', 'mock-reason', 'mock-slow', 'mock-quota', 'mock-notfound', 'mock-context', 'mock-flaky', 'gpt-4o-mock', 'claude-mock'].map(id => ({ id })) }))
       }
+      if (req.method === 'POST' && u.pathname.endsWith('/v1/messages')) return handleAnthropic(req, res, body, anthropic)
       if (!req.url.endsWith('/chat/completions')) { res.writeHead(404); return res.end('{"error":{"message":"not found"}}') }
       let j = {}
       try { j = JSON.parse(body) } catch {}
@@ -182,7 +185,7 @@ export function startMockServer(port = 0, opts = {}) {
   })
   server.on('connection', s => { timings.push({ ev: 'conn', at: Date.now(), rport: s.remotePort }); sockets.add(s); s.on('close', () => sockets.delete(s)) })
   return new Promise(resolve => server.listen(port, '127.0.0.1', () => resolve({
-    port: server.address().port, requests, timings, searches, transcriptions,
+    port: server.address().port, requests, timings, anthropic, searches, transcriptions,
     url: `http://127.0.0.1:${server.address().port}/v1`,
     close: () => new Promise(r => { for (const s of sockets) s.destroy(); server.close(() => r()) }),
   })))

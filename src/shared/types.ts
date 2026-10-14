@@ -22,6 +22,8 @@ export interface Attachment {
   truncated?: boolean
 }
 
+export interface ThinkingBlock { type: 'thinking' | 'redacted_thinking'; thinking?: string; signature?: string; data?: string }
+
 export interface ToolCall {
   id: string
   name: string
@@ -41,6 +43,11 @@ export interface Message {
   error?: string
   errorCode?: string
   reasoning?: string
+  /** Anthropic thinking blocks (with signature) to send back in tool-use turns */
+  thinkingBlocks?: ThinkingBlock[]
+  /** error details: redacted summary of the failed request and the raw server error body */
+  errorRequest?: any
+  errorBody?: string
   usage?: { input: number; output: number; estimated?: boolean }
   quote?: string
   status?: string // transient (e.g. retry notice)

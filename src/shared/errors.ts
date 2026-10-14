@@ -1,6 +1,9 @@
 export type ErrorCode = 'auth' | 'quota' | 'context_too_long' | 'rate_limit' | 'timeout' | 'network' | 'disconnected' | 'server' | 'not_found' | 'bad_request' | 'http' | 'aborted' | 'unknown'
 
 export class ProviderError extends Error {
+  /** raw server error body (truncated) and a redacted summary of the request, shown in the error details */
+  body?: string
+  request?: any
   constructor(public code: ErrorCode, public detail = '', public status?: number) {
     super(`[${code}]${status ? ' HTTP ' + status : ''} ${detail}`.trim())
     this.name = 'ProviderError'

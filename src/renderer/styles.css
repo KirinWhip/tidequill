@@ -412,3 +412,8 @@ section[data-testid="grants"] > .row:last-child { margin-top: var(--space3); }
 .chathead .tip-right[data-tip]:hover::after, .chathead > :last-child [data-tip]:hover::after { left: auto; right: 0; transform: none; }
 .toolbar [data-tip]:hover::after { left: 0; transform: none; }
 .sbadge[data-tip]:hover::after { left: 0; transform: none; bottom: auto; top: calc(100% + 6px); white-space: normal; }
+/* ---- Round 3 · A5: error card details + actions ---- */
+.error .errmain { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
+.error .errpre { max-height: 260px; overflow: auto; font-size: 11px; background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 8px; white-space: pre-wrap; word-break: break-word; color: var(--fg); }
+.error .errsec { margin-top: 6px; }
+.error .erracts { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -21,7 +21,7 @@ import { extractText, readAsDataURL, kindOf, UNSUPPORTED } from '../files'
 interface Props {
   conv: Conversation; convs: Conversation[]; settings: Settings; dark: boolean; busy: boolean; searching?: boolean; prompts: PromptItem[]
   onChooseCompare?(msgId: string): void
-  onSend(c: string, imgs: string[], att: Attachment[], quote?: string): void; onStop(): void; onRegenerate(id: string): void; onEditResend(id: string, c: string): void
+  onSend(c: string, imgs: string[], att: Attachment[], quote?: string): void; onStop(): void; onRegenerate(id: string, patch?: Partial<Conversation>): void; onEditResend(id: string, c: string): void
   onDeleteMsg(id: string): void; onPatch(fn: (c: Conversation) => Conversation): void; onExport(kind: 'md' | 'json' | 'pdf'): void; onSettings(s: Settings): void
   /** open Settings > usage price table for this model */
   onPriceSetup?(model: string): void
@@ -100,7 +100,7 @@ export function ChatView({ conv, convs, settings, dark, busy, searching, onChoos
             const last = m.compareGroup ? m.compareGroup === visible[visible.length - 1]?.compareGroup : i === visible.length - 1
             return <MessageItem key={m.id} m={m} dark={dark} streaming={busy && !!last && m.role === 'assistant'} toolResults={toolResults}
               branch={m.compareGroup ? null : branchInfo(conv, pos)} onBranch={idx => onSwitchBranch(pos, idx)} settings={settings}
-              onRegenerate={() => onRegenerate(m.id)} onEditResend={c => onEditResend(m.id, c)} onDelete={() => onDeleteMsg(m.id)} disabled={busy} onDisableSearch={() => onPatch(c => ({ ...c, webSearch: false }))}
+              onRegenerate={() => onRegenerate(m.id)} thinkingOn={flags.reasoning} onRetryNoThinking={() => onRegenerate(m.id, { reasoning: false })} onEditResend={c => onEditResend(m.id, c)} onDelete={() => onDeleteMsg(m.id)} disabled={busy} onDisableSearch={() => onPatch(c => ({ ...c, webSearch: false }))}
               onFork={() => onFork(m.id)} onQuote={() => setQuote(m.content)} onPriceSetup={onPriceSetup} onChoose={() => onChooseCompare?.(m.id)} />
           }
           return g[0].compareGroup
@@ -358,6 +358,7 @@ function Composer({ conv, settings, busy, prompts, quote, onClearQuote, onSend, 
   )
 }
 
+const prettyJSON = (s: string) => { try { return JSON.stringify(JSON.parse(s), null, 2) } catch { return s } }
 const hostOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, '') } catch { return '' } }
 
 function AttIcon({ kind }: { kind?: string }) {
@@ -366,14 +367,15 @@ function AttIcon({ kind }: { kind?: string }) {
 
 let speaking: string | null = null
 
-function MessageItem({ m, dark, streaming, toolResults, onRegenerate, onEditResend, onDelete, disabled, branch, onBranch, onFork, onQuote, settings, onPriceSetup, onChoose, onDisableSearch }: {
-  onDisableSearch?(): void
+function MessageItem({ thinkingOn, onRetryNoThinking, m, dark, streaming, toolResults, onRegenerate, onEditResend, onDelete, disabled, branch, onBranch, onFork, onQuote, settings, onPriceSetup, onChoose, onDisableSearch }: {
+  thinkingOn?: boolean; onRetryNoThinking?(): void; onDisableSearch?(): void
   m: Message; dark: boolean; streaming: boolean; toolResults: Map<any, string>; onRegenerate(): void; onEditResend(c: string): void; onDelete(): void; disabled: boolean
   branch: { index: number; total: number } | null; onBranch(i: number): void; onFork(): void; onQuote(): void; settings: Settings; onPriceSetup?(model: string): void; onChoose?(): void
 }) {
   const t = useT()
   const [editing, setEditing] = useState(false); const [v, setV] = useState(m.content)
   const [copied, copy] = useCopy()
+  const [errCopied, copyErr] = useCopy()
   const [reading, setReading] = useState(false)
   const readAloud = () => {
     const synth = window.speechSynthesis
@@ -415,8 +417,19 @@ function MessageItem({ m, dark, streaming, toolResults, onRegenerate, onEditRese
               <span className="n">{c.n}</span><span className="st">{c.title}</span><span className="host">{hostOf(c.url)}</span></a></li>)}</ol>
           </div> : null}
           {m.toolCalls?.map(c => <details key={c.id} className="toolcall"><summary><Wrench size={13} />{t.toolCall}: {c.name}</summary><pre>{JSON.stringify(c.args, null, 2)}</pre>{toolResults.get(c.id) && <><div className="meta">{t.toolResult}</div><pre>{toolResults.get(c.id)}</pre></>}</details>)}
-          {(m.error || m.errorCode) && <div className="error" data-error-code={m.errorCode || 'unknown'}><AlertTriangle size={14} />
-            <span>{(t as any)['err_' + (m.errorCode || 'unknown')] || t.err_unknown}{m.error && <details><summary>{t.details}</summary><code>{m.error}</code></details>}</span></div>}
+          {(m.error || m.errorCode) && <div className="error" data-error-code={m.errorCode || 'unknown'} data-testid="error-card"><AlertTriangle size={14} />
+            <span className="errmain">{(t as any)['err_' + (m.errorCode || 'unknown')] || t.err_unknown}
+              {!streaming && <span className="erracts">
+                <button className="btn sm" data-testid="err-retry" disabled={disabled} onClick={onRegenerate}><RefreshCw size={12} />{t.errRetry}</button>
+                {thinkingOn && onRetryNoThinking && <button className="btn sm" data-testid="err-retry-nothink" disabled={disabled} onClick={onRetryNoThinking}><Brain size={12} />{t.retryNoThinking}</button>}
+                <button className="btn sm" data-testid="err-copy" onClick={() => copyErr(JSON.stringify({ code: m.errorCode, error: m.error, model: m.model, serverBody: m.errorBody, request: m.errorRequest }, null, 2))}>{errCopied ? <Check size={12} /> : <Copy size={12} />}{errCopied ? t.copied : t.copyDetails}</button>
+              </span>}
+              {(m.error || m.errorRequest || m.errorBody) && <details data-testid="error-details"><summary>{t.details}</summary>
+                {m.error && <code>{m.error}</code>}
+                {m.errorBody && <><div className="meta errsec">{t.errServerBody}</div><pre className="errpre" data-testid="error-body">{prettyJSON(m.errorBody)}</pre></>}
+                {m.errorRequest && <><div className="meta errsec">{t.errRequestSummary}</div><pre className="errpre" data-testid="error-request">{JSON.stringify(m.errorRequest, null, 2)}</pre></>}
+              </details>}
+            </span></div>}
         </div>
         {!streaming && !editing && <div className="msgacts">
           {branch && <span className="branchnav" data-testid="branch-nav">

@@ -132,4 +132,9 @@ export const en: Dict = {
   chatDefaultsHint: "Only affects conversations created later; each conversation remembers its own toggles. All off by default.",
   onState: "On",
   offState: "Off",
+  errRetry: "Retry",
+  retryNoThinking: "Retry without deep thinking",
+  copyDetails: "Copy details",
+  errServerBody: "Server error response",
+  errRequestSummary: "Request summary (content and keys redacted)",
 }
