@@ -50,6 +50,13 @@ const out = [
   '',
   ...list.map(p => `- ${p.name}@${p.version}  ${p.license}  ${p.repo}`),
   '',
+  // EPL-2.0 (Eclipse Public License 2.0) components: distributed in object form, unmodified; source must be obtainable
+  ...list.filter(p => /EPL/.test(p.license)).flatMap(p => [
+    `EPL-2.0 NOTICE — ${p.name}@${p.version} is distributed unmodified, in object form (bundled JavaScript), under the Eclipse Public License 2.0.`,
+    `  Its Source Code is available from ${p.repo.replace(/^git\+/, '').replace(/\.git$/, '')} (release ${p.version}) and from the npm registry (https://registry.npmjs.org/${p.name}/-/${p.name}-${p.version}.tgz).`,
+    '  The EPL-2.0 applies only to that component; it does not extend to Tidequill, which remains MIT-licensed. Full EPL-2.0 text below.',
+    '',
+  ]),
   'OCR: dist/ocr/worker.min.js is the prebuilt tesseract.js worker (Apache-2.0); it embeds the components named in its license header:',
   workerLicense,
   'OCR language data (*.traineddata) is NOT shipped. It is downloaded on demand when OCR is enabled (default source: the @tesseract.js-data npm packages via jsDelivr, MIT; the data itself originates from tesseract-ocr/tessdata, Apache-2.0).',
