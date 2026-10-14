@@ -56,6 +56,8 @@ for (const [lang, theme] of [['zh', 'light'], ['zh', 'dark'], ['en', 'light'], [
     await expect(page.locator('.msg.assistant')).toBeVisible()
     await expect(page.getByTestId('titlebar')).toContainText(lang === 'zh' ? '潮汐与月相' : 'Tides and the moon')
     await shot(`${theme}-${lang}`)
+    // Round 3 release set (same 1.0.2 build)
+    fs.mkdirSync(path.resolve(__dirname, '..', 'screenshots', 'r3'), { recursive: true }); fs.copyFileSync(path.join(SHOTS, `${theme}-${lang}.png`), path.join(path.resolve(__dirname, '..', 'screenshots', 'r3'), `${theme}-${lang}.png`))
   })
 }
 

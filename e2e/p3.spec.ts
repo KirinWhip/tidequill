@@ -59,6 +59,7 @@ test('About page: name, version, license, repo, third-party notices, check updat
   await expect(about.locator('img')).toHaveJSProperty('complete', true)
   expect(await about.locator('img').evaluate((i: HTMLImageElement) => i.naturalWidth)).toBeGreaterThan(0)
   await page.screenshot({ path: path.join(SHOTS, 'about.png') })
+  { const r3 = path.resolve(__dirname, '..', 'screenshots', 'r3'); fs.mkdirSync(r3, { recursive: true }); fs.copyFileSync(path.join(SHOTS, 'about.png'), path.join(r3, `about-${VERSION}.png`)) }
   // notices bundled with the app
   await about.locator('details.notices summary').click()
   const notices = await page.getByTestId('notices').innerText()

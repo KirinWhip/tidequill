@@ -118,6 +118,7 @@ test('web search: settings, key encrypted on disk, toolbar toggle, request via m
   await expect(page.locator('.msg.assistant').first().getByTestId('search-error')).toHaveCount(0)
   await note.locator('summary').click()
   await expect(note.getByTestId('search-retry')).toBeVisible()
+  fs.mkdirSync(path.resolve(__dirname, '..', 'screenshots', 'r3'), { recursive: true }); await page.screenshot({ path: path.join(path.resolve(__dirname, '..', 'screenshots', 'r3'), 'search-failure-notice.png') })
   await note.getByTestId('search-retry').click()
   await expect.poll(() => mock.searches.length).toBeGreaterThan(nSearch + 1)
   await expect(page.locator('.msg.assistant').last()).toContainText('Hello from mock')
@@ -131,6 +132,7 @@ test('web search: settings, key encrypted on disk, toolbar toggle, request via m
   await expect(toggle).toBeDisabled()
   await expect(toggle).toHaveAttribute('aria-pressed', 'false')
   await expect(page.getByTestId('search-setup')).toHaveText(zhCN.searchGoSetup)
+  await page.screenshot({ path: path.join(path.resolve(__dirname, '..', 'screenshots', 'r3'), 'search-disabled-hint.png') })
   const nBefore = mock.searches.length
   await send(page, '没有密钥时')
   await expect(page.locator('.msg.assistant').last()).toContainText('Hello from mock')
