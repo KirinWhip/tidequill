@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, Eye, EyeOff, Loader2, Plus, PlugZap, RefreshCw, Search, Trash2, X, XCircle } from 'lucide-react'
+import { Check, Loader2, Plus, PlugZap, RefreshCw, Search, Trash2, X, XCircle } from 'lucide-react'
 import type { ProviderConfig, Settings } from '../../shared/types'
 import type { Dict } from '../i18n'
 import type { AppActions } from '../App'
 import { uid } from '../../shared/storage'
 import { defaultBaseURL, listModels } from '../../shared/providers'
-import { bridgeFetch } from '../api'
+import { api, bridgeFetch } from '../api'
+import { SecretField } from './SecretField'
 import { ProviderError } from '../../shared/errors'
 
 export type ProvStatus = { state: 'nokey' | 'untested' | 'checking' | 'ok' | 'fail'; detail?: string; count?: number; at?: number }
@@ -20,12 +21,14 @@ export function ProvidersTab({ s, t, set, actions, secure }: { s: Settings; t: D
   const prov = s.providers.find(p => p.id === sel)
   const setProv = (id: string, p: Partial<ProviderConfig>) => set({ providers: s.providers.map(x => x.id === id ? { ...x, ...p } : x) })
   const [status, setStatus] = useState<Record<string, ProvStatus>>({ ...statusCache })
-  const [showKey, setShowKey] = useState(false)
+  const [secretHosts, setSecretHosts] = useState<Record<string, { host: string }>>({})
+  const refreshSecrets = () => api.secretStatus?.().then((x: any) => setSecretHosts(x || {}))
+  useEffect(() => { refreshSecrets() }, [])
   const [filter, setFilter] = useState('')
   const [newModel, setNewModel] = useState('')
   const [fetchMsg, setFetchMsg] = useState<any>('')
   const providersRef = useRef(s.providers); providersRef.current = s.providers
-  useEffect(() => { setShowKey(false); setFilter(''); setFetchMsg('') }, [sel])
+  useEffect(() => { setFilter(''); setFetchMsg('') }, [sel])
 
   const put = (id: string, st: ProvStatus) => { statusCache[id] = st; setStatus(x => ({ ...x, [id]: st })) }
   const statusOf = (p: ProviderConfig): ProvStatus => status[p.id] || (needsKey(p) && !p.apiKey ? { state: 'nokey' } : { state: 'untested' })
@@ -73,11 +76,11 @@ export function ProvidersTab({ s, t, set, actions, secure }: { s: Settings; t: D
         <label>{t.type}<select value={prov.type} onChange={e => setProv(prov.id, { type: e.target.value as any, baseURL: defaultBaseURL(e.target.value as any) })}>
           <option value="openai">{t.typeOpenAI}</option><option value="anthropic">{t.typeAnthropic}</option><option value="gemini">{t.typeGemini}</option><option value="ollama">{t.typeOllama}</option></select></label></div>
       <label>{t.apiKey}
-        <div className="keyfield">
-          <input type={showKey ? 'text' : 'password'} data-testid="api-key" value={prov.apiKey} placeholder={needsKey(prov) ? 'sk-…' : t.apiKeyOptional} onChange={e => { setProv(prov.id, { apiKey: e.target.value }); put(prov.id, { state: e.target.value || !needsKey(prov) ? 'untested' : 'nokey' }) }} />
-          <button className="icon-btn sm" data-testid="key-toggle" title={showKey ? t.hideKey : t.showKey} aria-label={showKey ? t.hideKey : t.showKey} onClick={() => setShowKey(!showKey)}>{showKey ? <EyeOff size={15} /> : <Eye size={15} />}</button>
-        </div>
-        <small className={secure ? '' : 'warn'}>{secure ? t.apiKeyHint : t.apiKeyPlainWarn}</small></label>
+        <SecretField key={prov.id} path={`providers/${prov.id}/apiKey`} value={prov.apiKey} testid="api-key" placeholder={needsKey(prov) ? 'sk-…' : t.apiKeyOptional}
+          onSaved={v => { setProv(prov.id, { apiKey: v }); put(prov.id, { state: v || !needsKey(prov) ? 'untested' : 'nokey' }); refreshSecrets() }} />
+        {(() => { const b = secretHosts[`providers/${prov.id}/apiKey`]?.host; let h = ''; try { h = new URL(prov.baseURL).host } catch { /* invalid url */ }
+          return prov.apiKey && b && h && b !== h ? <small className="warn" data-testid="key-host-changed">{t.secretHostChanged.replace('{host}', b)}</small> : null })()}
+        <small className={secure ? '' : 'warn'}>{secure ? t.secretHint : t.apiKeyPlainWarn}</small></label>
       <label>{t.baseURL}<input value={prov.baseURL} onChange={e => { setProv(prov.id, { baseURL: e.target.value }); put(prov.id, { state: 'untested' }) }} /></label>
       <div className="row testrow">
         <button data-testid="test-conn" disabled={st?.state === 'checking'} onClick={() => test(prov)}><PlugZap size={14} />{t.onbTest}</button>

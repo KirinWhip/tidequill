@@ -137,4 +137,11 @@ export const en: Dict = {
   copyDetails: "Copy details",
   errServerBody: "Server error response",
   errRequestSummary: "Request summary (content and keys redacted)",
+  secretSaved: "Saved",
+  secretReplace: "Replace",
+  secretClear: "Clear",
+  secretSave: "Save",
+  secretClearConfirm: "Clear the saved key?",
+  secretHint: "The key is kept only in the main process (OS-encrypted storage) and is never shown again; use Replace to change it.",
+  secretHostChanged: "The key is bound to {host}; the address changed, so re-enter the key (it is not sent to the new address).",
 }

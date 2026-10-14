@@ -10,6 +10,7 @@ import type { GalleryImage, McpServerConfig, Persona, PromptItem, ProviderConfig
 import type { Dict } from '../i18n'
 import { uid } from '../../shared/storage'
 import { defaultBaseURL, generateImage, listModels } from '../../shared/providers'
+import { SecretField } from './SecretField'
 import { api, bridgeFetch } from '../api'
 import { ProviderError } from '../../shared/errors'
 
@@ -104,7 +105,7 @@ export function SettingsPanel({ s, t, onChange, actions, initialTab, priceModel 
         <label className="check"><input type="checkbox" checked={wd.enabled} onChange={e => setWd({ enabled: e.target.checked })} /> {t.webdavEnable}</label>
         <label>{t.webdavUrl}<input value={wd.url} onChange={e => setWd({ url: e.target.value })} /></label>
         <label>{t.webdavUser}<input value={wd.username} onChange={e => setWd({ username: e.target.value })} /></label>
-        <label>{t.webdavPass}<input type="password" value={wd.password} onChange={e => setWd({ password: e.target.value })} /></label>
+        <label>{t.webdavPass}<SecretField path="webdav/password" value={wd.password} testid="webdav-pass" onSaved={v => setWd({ password: v })} /></label>
         <div className="row">
           <button data-testid="webdav-test" onClick={async () => { busy(); try { await webdavTest(wd); ok(t.webdavOk) } catch (e: any) { fail(errText(t, e)) } }}>{t.webdavTest}</button>
           <button data-testid="webdav-sync" disabled={!wd.enabled || !wd.url} onClick={async () => { busy(); try { ok(t.webdavSynced + await actions.sync()) } catch (e: any) { fail(errText(t, e)) } }}><RefreshCw size={14} />{t.webdavSync}</button>
