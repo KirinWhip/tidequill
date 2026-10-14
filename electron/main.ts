@@ -273,7 +273,7 @@ app.whenReady().then(() => {
   ipcMain.handle('pdf:export', async (_e, name: string) => {
     const r = await dialog.showSaveDialog(win!, { defaultPath: name, filters: [{ name: 'PDF', extensions: ['pdf'] }] })
     if (r.canceled || !r.filePath) return false
-    const pdf = await win!.webContents.printToPDF({ printBackground: true, pageSize: 'A4', margins: { marginType: 'default' } })
+    const pdf = await win!.webContents.printToPDF({ printBackground: true, pageSize: 'A4' })
     fs.writeFileSync(r.filePath, pdf); return true
   })
   ipcMain.handle('window:toggle', () => toggleWindow())
