@@ -6,6 +6,7 @@ import type { RequestInfo } from '../shared/reqdebug'
 import { ProviderError, withRetry } from '../shared/errors'
 import { estimateMessages, estimateTokens } from '../shared/usage'
 import { webSearch, searchContext, SearchError, type Citation } from '../shared/websearch'
+import { convFlags, newConvFlags } from '../shared/chatflags'
 import { branchAt, forkConversation, switchBranch } from '../shared/branches'
 import { makeBackup, parseBackup, restoreSettings, makeSyncPayload, mergeSync, BACKUP_KEYS } from '../shared/sync'
 import { api, storage, bridgeFetch, setRequestTimeout } from './api'
@@ -118,7 +119,7 @@ export default function App() {
   const newChat = useCallback((persona?: Persona) => {
     if (!settings) return
     const now = Date.now()
-    const c: Conversation = { id: uid(), title: persona?.name || t.untitled, messages: [], providerId: settings.defaultProviderId, model: settings.defaultModel, systemPrompt: persona?.prompt || '', pinned: false, createdAt: now, updatedAt: now }
+    const c: Conversation = { id: uid(), title: persona?.name || t.untitled, messages: [], providerId: settings.defaultProviderId, model: settings.defaultModel, systemPrompt: persona?.prompt || '', pinned: false, createdAt: now, updatedAt: now, ...newConvFlags(settings) }
     updateConvs(l => [c, ...l]); setCurId(c.id); setModal(null)
   }, [settings, t, updateConvs])
   useEffect(() => { api.onCommand((cmd: string) => { if (cmd === 'newChat') newChat() }) }, [newChat])
@@ -141,8 +142,10 @@ export default function App() {
   /** web search for the last user message (when the toolbar toggle is on); never throws */
   const doSearch = async (id: string, history: Message[], signal: AbortSignal): Promise<{ citations?: Citation[]; searchQuery?: string; searchError?: string; userId?: string; extra?: string }> => {
     const ws = settings?.webSearch
+    const conv = convsRef.current.find(c => c.id === id)
     const lastUser = [...history].reverse().find(m => m.role === 'user')
-    if (!ws?.enabled || !lastUser?.content.trim()) return {}
+    // only when this conversation has search on AND a key / URL is configured (otherwise the toggle is disabled)
+    if (!ws || !conv || !settings || !convFlags(conv, settings).webSearchActive || !lastUser?.content.trim()) return {}
     const q = lastUser.content.trim()
     setSearchingId(id)
     try {
@@ -188,7 +191,7 @@ export default function App() {
           if (!provider) throw new ProviderError('bad_request', `provider ${tg.providerId} not found`)
           const res = await withRetry(() => {
             text = ''; reasoning = ''
-            return streamChat(provider, conv.systemPrompt, ctx, { model: tg.model, temperature, topP, maxTokens, signal: ctrl.signal, fetchImpl: bridgeFetch, reasoning: !!conv.reasoning,
+            return streamChat(provider, conv.systemPrompt, ctx, { model: tg.model, temperature, topP, maxTokens, signal: ctrl.signal, fetchImpl: bridgeFetch, reasoning: convFlags(conv, settings).reasoning,
               onReasoning: r => { reasoning += r; setMsg(aid, { reasoning }) }, onDelta: d => { text += d; setMsg(aid, { content: text }) } })
           }, { retries: settings.retries, baseMs: settings.retryBaseMs, signal: ctrl.signal }, () => !text && !reasoning)
           setMsg(aid, { content: res.text, reasoning: res.reasoning || reasoning || undefined, usage: res.usage || { input: estimateMessages(ctx, conv.systemPrompt), output: estimateTokens(res.text + (res.reasoning || '')), estimated: true } })
@@ -216,7 +219,7 @@ export default function App() {
     const ctrl = new AbortController(); abortRef.current = ctrl; setBusyId(id)
     let msgs = [...history]
     // builtin demo tools are only sent when explicitly enabled; plugin / MCP tools when tool calling is on
-    const tools = settings.toolsEnabled ? (await api.listTools()).filter((x: ToolDef) => settings.builtinTools || !x.name.startsWith('builtin__')) : []
+    const tools = convFlags(conv, settings).tools ? (await api.listTools()).filter((x: ToolDef) => settings.builtinTools || !x.name.startsWith('builtin__')) : []
     const setMsg = (aid: string, patch: Partial<Message>) => patchConv(id, c => ({ ...c, messages: c.messages.map(m => m.id === aid ? { ...m, ...patch } : m) }))
     try {
       const s = await doSearch(id, history, ctrl.signal)
@@ -230,7 +233,7 @@ export default function App() {
         const res = await withRetry(() => {
           text = ''; reasoning = ''
           return streamChat(provider, conv.systemPrompt, ctx, {
-            model: conv.model, temperature, topP, maxTokens, tools: tools.length ? tools : undefined, signal: ctrl.signal, fetchImpl: bridgeFetch, reasoning: !!conv.reasoning,
+            model: conv.model, temperature, topP, maxTokens, tools: tools.length ? tools : undefined, signal: ctrl.signal, fetchImpl: bridgeFetch, reasoning: convFlags(conv, settings).reasoning,
             onRequest: r => setLastRequests(m => ({ ...m, [id]: { ...r, at: Date.now() } })),
             onReasoning: r => { reasoning += r; setMsg(aid, { reasoning, status: undefined }) },
             onDelta: d => { text += d; setMsg(aid, { content: text, status: undefined }) },
@@ -394,6 +397,7 @@ export default function App() {
           onSend={send} onStop={() => abortRef.current?.abort()} onRegenerate={regenerate} onEditResend={editResend} onDeleteMsg={deleteMsg}
           onFork={fork} onSwitchBranch={(pos, idx) => patchConv(cur.id, c => switchBranch(c, pos, idx))} onOpenConv={setCurId}
           onPatch={fn => patchConv(cur.id, fn)} onSettings={saveSettings} onConvSettings={() => setConvSettingsId(cur.id)}
+          onOpenSettings={tab => { setSettingsNav({ tab }); setModal('settings') }}
           onPriceSetup={model => { setSettingsNav({ tab: 'usageSettings', priceModel: model }); setModal('settings') }}
           onExport={kind => kind === 'md' ? api.saveFile(`${cur.title}.md`, conversationToMarkdown(cur, { model: t.exportedModel, attachment: t.attachment }))
             : kind === 'json' ? api.saveFile(`${cur.title}.json`, exportJSON([cur])) : api.exportPdf(`${cur.title}.pdf`)} />

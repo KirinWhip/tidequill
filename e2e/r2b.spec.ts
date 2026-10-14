@@ -151,7 +151,7 @@ test('sidebar: grouped toolbox, no import/export, empty folder guidance, shortcu
   for (const [label, sc] of [[zhCN.convSettings, 'Shift+S'], [zhCN.exportAs, '+E'], [zhCN.systemPrompt, 'Shift+P']]) {
     expect(await page.getByRole('button', { name: label, exact: true }).getAttribute('title')).toContain(sc)
   }
-  expect(await page.getByRole('button', { name: zhCN.reasoning, exact: true }).getAttribute('title')).toContain('+D')
+  expect(await page.getByRole('button', { name: zhCN.reasoning, exact: true }).getAttribute('data-tip')).toContain('+D')
   // shortcuts work
   await page.keyboard.press('Control+d')
   await expect(page.getByRole('button', { name: zhCN.reasoning, exact: true })).toHaveAttribute('aria-pressed', 'true')

@@ -27,7 +27,8 @@ export function SearchTab({ s, t, set, secure }: { s: Settings; t: Dict; set(p: 
   }
   return (
     <div className="form" data-testid="search-settings">
-      <label className="check"><input type="checkbox" data-testid="search-enabled" checked={ws.enabled} onChange={e => setWs({ enabled: e.target.checked })} /> {t.webSearchTip}</label>
+      <label className="check"><input type="checkbox" data-testid="search-enabled" checked={!!s.chatDefaults?.webSearch} onChange={e => set({ chatDefaults: { ...{ reasoning: false, tools: false }, ...(s.chatDefaults || {}), webSearch: e.target.checked } })} /> {t.chatDefaultsTitle}: {t.webSearch}</label>
+      <div className="meta">{t.webSearchTip3}</div>
       <label>{t.searchProvider}<div className="seg" role="radiogroup" aria-label={t.searchProvider}>
         {SEARCH_PROVIDERS.map(p => <button key={p} role="radio" aria-checked={ws.provider === p} data-provider={p} className={ws.provider === p ? 'on' : ''} onClick={() => setWs({ provider: p })}>{t[('sp_' + p) as 'sp_tavily']}</button>)}
       </div></label>

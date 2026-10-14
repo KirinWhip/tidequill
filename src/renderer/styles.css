@@ -332,7 +332,15 @@ a.cite:hover { background: var(--accent); color: var(--accent-fg); border-color:
 .sources .n { grid-row: span 2; align-self: start; font-size: 11px; font-weight: 700; color: var(--accent-text); background: var(--accent-soft); border-radius: 4px; padding: 0 5px; }
 .sources .st { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sources .host { font-size: 11px; color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.searchnote { display: flex; gap: 6px; align-items: flex-start; color: var(--warn); font-size: var(--font-sm); margin-bottom: 6px; }
+.searchnote { font-size: var(--font-xs); color: var(--fg-muted); margin-bottom: 6px; }
+.searchnote > summary { display: inline-flex; gap: 5px; align-items: center; cursor: pointer; list-style: none; padding: 1px 8px; border: 1px solid var(--border); border-radius: var(--radius-full); }
+.searchnote > summary::-webkit-details-marker { display: none; }
+.searchnote[open] > summary .chev { transform: rotate(90deg); }
+.searchnote-body { display: flex; flex-direction: column; gap: 6px; padding: 6px 2px 2px; }
+.searchnote-body .row { display: flex; gap: 6px; }
+.searchtoggle-wrap { display: inline-flex; align-items: center; gap: 4px; }
+.linkbtn.searchsetup { font-size: var(--font-xs); }
+.toggle:disabled { opacity: .55; cursor: not-allowed; }
 .status-line.searching { color: var(--fg-muted); padding: 0 var(--space5); max-width: var(--read-w, 980px); margin: 0 auto; width: 100%; }
 /* attachments */
 .attwarn { display: flex; gap: 8px; align-items: flex-start; margin: 4px 0 6px; padding: 6px 8px; border: 1px solid var(--warn); border-radius: var(--radius-sm); color: var(--warn); background: var(--bg); font-size: var(--font-sm); }
@@ -395,3 +403,12 @@ ol.argv { margin: 0; padding-left: 1.6em; }
 .storage-notice > svg { flex-shrink: 0; margin-top: 2px; color: var(--warn, #d97706); }
 .storage-notice > button { flex-shrink: 0; white-space: nowrap; }
 section[data-testid="grants"] > .row:last-child { margin-top: var(--space3); }
+
+/* ---- Round 3: themed tooltips for any [data-tip] control (native title tooltips ignore the theme and cannot be screenshotted) ---- */
+[data-tip] { position: relative; }
+[data-tip]:hover::after, [data-tip]:focus-visible::after { content: attr(data-tip); position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(100% + 8px); z-index: 60; width: max-content; max-width: 300px;
+  white-space: pre-line; text-align: left; background: var(--fg); color: var(--bg); padding: 6px 9px; border-radius: var(--radius-sm); font-size: 11.5px; font-weight: 400; line-height: 1.45; box-shadow: 0 4px 12px var(--shadow); pointer-events: none; }
+.chathead [data-tip]:hover::after, .chathead [data-tip]:focus-visible::after, .tip-below[data-tip]:hover::after { bottom: auto; top: calc(100% + 8px); }
+.chathead .tip-right[data-tip]:hover::after, .chathead > :last-child [data-tip]:hover::after { left: auto; right: 0; transform: none; }
+.toolbar [data-tip]:hover::after { left: 0; transform: none; }
+.sbadge[data-tip]:hover::after { left: 0; transform: none; bottom: auto; top: calc(100% + 6px); white-space: normal; }
