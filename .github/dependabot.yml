@@ -1,0 +1,18 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      build-and-test-tooling:
+        patterns: ['vite', 'vitest', '@vitejs/*', 'electron-builder', 'esbuild', '@playwright/test', 'typescript', '@types/*']
+    ignore:
+      # Electron majors are upgraded by hand (API changes, full E2E run on Windows needed)
+      - dependency-name: electron
+        update-types: ['version-update:semver-major']
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

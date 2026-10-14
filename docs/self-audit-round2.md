@@ -37,7 +37,7 @@
 | 标题栏 | ❌ | 使用系统原生标题栏（第 8 项待做）。 |
 | 仓库简介 | ❌ | 仍为 “Desktop AI chat client (Chatbox-like)…”（第 26 项待做）。 |
 
-## 二、Round 2 各项当前状态（阶段 C 完成后）
+## 二、Round 2 各项当前状态（阶段 D 完成后，v1.0.1）
 
 ### 阶段 A（本轮已做）
 | # | 项目 | 状态 | 说明 / 未验证部分 |
@@ -70,31 +70,39 @@
 | 18 | 对话内查找（Ctrl+F） | ✅ | 用 CSS Custom Highlight API 高亮，不修改 DOM。E2E 检查了计数、前后跳转、不区分大小写、当前匹配可见、Esc 清除高亮。<br>局限：跨格式边界的匹配找不到（例如一半粗体、一半普通文字）；折叠的思考过程、折叠的代码块，以及预览 iframe 里的内容不参与查找。 |
 | 19 | 语音输入 | ✅ 模拟接口 / ⚠️ 真实麦克风和服务 | MediaRecorder 录音（webm/opus），通过 OpenAI 兼容的 /audio/transcriptions（multipart）转写。<br>麦克风权限：只有点击按钮后 10 秒内、仅音频、来自应用主框架的请求会被允许一次。E2E 验证了页面脚本自己发起的请求、视频请求、以及用过一次之后的请求都被拒绝。<br>E2E 用 Chromium 的假音频设备（`--use-fake-device-for-media-stream`）录音，并检查模拟服务器收到了大于 1 KB 的 audio/webm 数据。**没有用真实麦克风测试过，也没有调用过真实的 OpenAI 转写接口。**<br>没有使用 Web Speech（Electron 中没有 Google 的语音服务密钥，通常不可用）。macOS 会调用系统的麦克风授权，但**未测试**。 |
 
-### 阶段 D（尚未开始）
-| # | 项目 | 状态 |
-|---|---|---|
-| 20 | 生产版禁用 F12，开发者模式 | ❌ |
-| 21 | 插件放进 utilityProcess，SHA256 确认 | ❌ |
-| 22 | MCP 命令行确认，按服务器 + 工具授权 | 🟡 已有按工具名“始终允许”和撤销；没有命令行确认，也没按服务器区分 |
-| 23 | 原子写、备份轮换、损坏恢复、SQLite 评估 | 🟡 已原子写；其余没做 |
-| 24 | 扫描仓库和历史中的密钥 / 路径 / 用户名 | ❌ 没有系统扫描过 |
-| 25 | SECURITY.md、Dependabot、audit、CodeQL、Issue 模板 | ❌ |
-| 26 | 仓库简介 | ❌ |
+### 阶段 D（本轮已做，随 v1.0.1 发布）
+| # | 项目 | 状态 | 说明 / 局限 |
+|---|---|---|---|
+| 20 | 生产版禁用 F12，开发者模式 | ✅ | `app.isPackaged` 时只有 设置 → 通用 → 开发者模式 打开后 F12 才有效；未开启时任何方式打开的 DevTools 都会在 `devtools-opened` 中被关闭。E2E 在打包后的应用上验证：默认 F12 不打开、程序调用 openDevTools 被关闭、开启开发者模式后 F12 打开。局限：命令行参数 `--remote-debugging-port` 之类的 Chromium 调试开关**没有**禁用（需要能在本机以用户身份启动进程，已超出应用自身能防的范围）。 |
+| 21 | 插件 utilityProcess + 路径/SHA-256 确认 | ✅ / 🟡 | 插件在 `utilityProcess.fork(dist-electron/plugin-host.js)` 中加载和执行；主进程只保留内置工具。首次加载和文件变化后弹窗显示路径 + SHA-256；插件进程 require 前再次校验哈希。调用超时 60 s 重启插件进程，崩溃后下次调用自动重启并重新加载。单元测试用同一脚本（child_process.fork）验证了：未确认不加载、修改后需重新确认、崩溃和卡死后恢复；E2E 验证插件工具返回的 pid 是 `app.getAppMetrics()` 中 type 为 `Utility` 的进程。<br>**🟡 这是进程隔离，不是沙箱**：插件进程仍是完整的 Node.js，可以读写用户文件、访问网络、启动其他程序。README 和 SECURITY.md 已写明。所有已信任的插件共用一个插件进程，彼此之间没有隔离。 |
+| 22 | MCP stdio 命令确认 + 按来源授权 + 授权页 | ✅ | 添加 stdio 服务器时应用内弹窗显示完整命令行（带引号转义）、逐个参数和环境变量名，确认后才保存并启动；确认绑定 sha256(命令, 参数, 环境变量)，任何变化都要重新确认；未确认的服务器不会启动（单元测试 + E2E）。“始终允许”键为 `plugin:<名称>::<工具>` / `mcp:<服务器 id>::<工具>`；1.0.0 的不区分来源的授权在升级时被删除。插件/工具 页的“授权管理”列出授权、已信任插件、已确认 MCP 命令，可逐项或全部撤销（E2E）。局限：插件按 `name` 区分来源，两个插件声明同一个 name 时会共享授权；HTTP 类型的 MCP 服务器不需要确认（不启动本地程序）。 |
+| 23 | 原子写 + 轮换备份 + 损坏恢复 + SQLite 评估 | ✅ | `electron/store.ts`：临时文件 + fsync + rename；`backups/<key>/` 保留 5 份，启动时和每 key 最多 10 分钟一次（内容变化时）；解析失败或顶层类型错误时保留 `<key>.corrupt-<时间>.json`，从最新有效备份恢复（逐个往前找），界面顶部提示。单元测试 6 个；E2E 截断 conversations.json 后重启，验证提示、对话恢复、损坏文件保留。`docs/sqlite-evaluation.md` 已写，**未迁移**。局限：恢复是整文件回退，最多可能丢失最近 10 分钟的修改；没有检测“格式正确但内容错误”的情况；Windows 上 rename 遇到杀毒软件占用时会报错（没有重试）。 |
+| 24 | 密钥 / 路径 / 用户名扫描 | ✅ 未发现问题 | 见下方“阶段 D：密钥与隐私扫描”。 |
+| 25 | SECURITY.md、Dependabot、npm audit、CodeQL、Issue 模板 | ✅ / ⚠️ | 均已添加。SECURITY.md 指向 GitHub 私密漏洞报告，但**仓库目前没有开启该功能**（需仓库所有者在 Settings → Code security 中开启，或 `gh api -X PUT repos/KirinWhip/tidequill/private-vulnerability-reporting`）。npm audit 结果见下方。 |
+| 26 | 仓库简介 | ✅ | 已用 `gh repo edit` 改为 “Cross-platform desktop AI chat client supporting multiple model providers, MCP tools, and local data”。 |
+
+### 阶段 D：密钥与隐私扫描（第 24 项）
+- **gitleaks 8.21.2**：`gitleaks git`（全部历史，提交数见报告）和 `gitleaks dir`（工作区）均为 **no leaks found**。
+- **grep 全部历史（`git log -p --all`）和工作区**：`/home/box`、`92751`、`C:\Users`、`C:/Users`、`AppData`、`ghp_` / `github_pat_` / `gho_`、`sk-` 加 20 位以上、`tvly-`、`AKIA`、`xox`、私钥头、`AIza`、`box@` 均 **0 命中**。`/tmp/` 的命中是 package-lock 中的 `tmp` 包、E2E 中伪造的 AppImage 环境变量和一个脚本的用法说明；`@gmail` 的命中是 THIRD_PARTY_NOTICES 中第三方作者的邮箱；`KirinWhip` 是公开身份和 noreply 邮箱。全部提交的作者都是 `追逐 <KirinWhip@users.noreply.github.com>`。
+- **二进制文件**（png / ico / gz / xlsx / pptx 共 99 个）用 strings 检查，没有路径或用户名。xlsx 的创建者是 openpyxl；pptx 的 core.xml 是 python-pptx 默认模板自带的元数据（作者 “Steve Canny”，2013 年），不是本机信息。
+- **截图**：逐张看过（拼图检查），只有模拟数据，例如 `sk-mock-123456`、`http://127.0.0.1` 地址和随机的临时目录名。阶段 D 新截图中 MCP 确认框特意使用 `npx -y @modelcontextprotocol/server-filesystem ~/Documents`，避免出现本机路径；插件确认截图中的路径是随机临时目录 `/tmp/tidequill-e2e-xxxx/plugins/hello.js`。
+- **测试报告**：仓库中没有提交 playwright-report 或 test-results。
+- **OCR 测试数据** `tests/fixtures/ocr/eng.traineddata.gz`（约 2.9 MB）：来自 tesseract.js-data，Apache-2.0 许可，不含敏感信息，**保留**。它已经在历史中，即使删除也会一直占用克隆体积，要彻底去掉只能改写历史，这次没有改写。
+- 结论：没有发现需要改写历史的内容，所以没有 force-push。
+
+### 阶段 D：npm audit（第 25 项）
+升级前 31 项（3 critical / 14 high / 9 moderate / 5 low）。已做：
+- Electron 31.7.7 → **44.7.2**（high：ASAR 完整性绕过等；Electron 31 已停止支持）。代码改动只有 `printToPDF` 去掉已删除的 `marginType`。Linux 全部 E2E 和 Windows CI 均在 44 上通过。
+- electron-builder 25 → **26.15.3**（critical：tar；high：builder-util-runtime、app-builder-lib 等）。
+- katex 通过 `overrides` 统一到 **0.19.0**（low：原型污染）。
+
+剩余 16 项（2 critical / 1 high / 13 moderate / 0 low），**都不在安装包里**：
+- critical：`vitest`、`tinypool`（vitest 2 的测试运行器）；high：`vite`（开发服务器路径穿越等）；moderate：`esbuild` 开发服务器、`@vitest/mocker`、`vite-node`——只在开发和测试时运行。修复需要 vite 8 + vitest 5（大版本），尝试升级时 npm 依赖解析失败（与本机 npm 9.2 和现有 lock 有关），为了不在发布前引入构建工具大改动，**本版本没有升级**，交给 Dependabot 跟进。
+- moderate：`electron-builder` 链上的 `global-agent` / `roarr` / `sprintf-js`（只在打包时运行）；`mammoth → argparse → sprintf-js`（argparse 只被 mammoth 的命令行入口使用，没有打包进应用；mammoth 本身被标为受影响是因为依赖关系）。
+- CI 的 Security 工作流对“随应用发布的代码（打包进应用的 npm 包 + Electron）中出现 high / critical”才失败，其余在任务摘要中列出。
 
 ### 需要用户手动验证的项目（自动化无法覆盖）
-1. **自动更新**（仓库已公开）：安装 v1.0.0，等 v1.0.1 发布后，在“关于”页点“检查更新”。应提示有新版本 → 下载 → 重启后版本号变为 1.0.1。
-2. **开机启动**：设置 → 系统 → 勾选“开机启动”。重启 Windows 后应自动启动（如果开了托盘，会在托盘中）。
-3. **旧数据迁移**：如果机器上有 0.x 版本的数据（`%APPDATA%\chatbox-clone`），首次启动 Tidequill 后对话应该都在，旧目录仍然保留。
-4. **真实 DeepSeek 深度思考**（阶段 A 新增）：
-   1. 用 `deepseek-flash` 开启“深度思考”提问，回复上方应出现“思考过程”。
-   2. 关闭后再问，不应再出现思考过程。
-   3. 两种情况都可以在“查看本次请求内容”中看到 `thinking` 字段。
-5. **真实 token 对比**：用 `你好 你是谁 你能干啥?` 提问，比较 v1.0.0 和新版消息底部的输入 token。预期会明显下降，具体数字取决于服务商。
-6. **阶段 C 真实服务**：
-   1. 用真实的 Tavily 或 Brave 密钥（或自建的 SearXNG）开启联网搜索提问，检查来源是否正确。
-   2. 用 OpenAI 密钥开启语音输入，对着真实麦克风说一句话，检查转写结果。
-   3. 用 Excel 实际保存的 .xlsx（含日期和合并单元格）添加为附件，检查提取的文字。
-   4. 下载中文 OCR 数据，识别一张中文截图。
+详细步骤见 [docs/MANUAL-TESTS.md](MANUAL-TESTS.md)：1.0.0 → 1.0.1 自动更新、开机自动启动、旧数据迁移（`%APPDATA%\ChatBox Clone`）、真实 DeepSeek 深度思考、真实 token 数、Windows 标题栏按钮、真实麦克风、中文 OCR、真实联网搜索。另外：用 Excel 实际保存的 .xlsx（含日期和合并单元格）测试附件提取。
 
 ## 二点五、阶段 A CI 中 2 个 Windows E2E 偶发超时的根因
 

@@ -6,6 +6,7 @@ import { appPath, launch, seedUserData, dumpMockTimings } from './helpers'
 // @ts-ignore
 import { startMockServer, UPDATE_VERSION } from '../tests/mock-server.mjs'
 import { zhCN } from '../src/renderer/locales/zh-CN'
+const VERSION: string = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf8')).version
 import { en } from '../src/renderer/locales/en'
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots', 'p3')
@@ -40,7 +41,7 @@ test('new name in window title, sidebar, version metadata', async () => {
   await expect(page.locator('.brand')).toContainText('潮笺 Tidequill')
   await expect(page.locator('.brand img')).toBeVisible()
   const meta = await app.evaluate(({ app, BrowserWindow }) => ({ name: app.getName(), version: app.getVersion(), title: BrowserWindow.getAllWindows()[0].getTitle() }))
-  expect(meta).toEqual({ name: 'Tidequill', version: '1.0.0', title: 'Tidequill' })
+  expect(meta).toEqual({ name: 'Tidequill', version: VERSION, title: 'Tidequill' })
   expect(await page.content()).not.toMatch(/chat\s*box/i)
 })
 
@@ -51,7 +52,7 @@ test('About page: name, version, license, repo, third-party notices, check updat
   await page.locator('.sidenav button', { hasText: zhCN.about }).click()
   const about = page.getByTestId('about')
   await expect(about).toContainText('潮笺 Tidequill')
-  await expect(page.getByTestId('about-version')).toContainText('1.0.0')
+  await expect(page.getByTestId('about-version')).toContainText(VERSION)
   await expect(about).toContainText('MIT')
   await expect(about).toContainText('追逐')
   await expect(page.getByTestId('about-repo')).toContainText('https://github.com/KirinWhip/tidequill')

@@ -150,6 +150,8 @@ export interface Settings {
   launchAtLogin: boolean
   autoCheckUpdate: boolean
   onboarded: boolean
+  /** Settings > General > Developer mode: allows F12 / DevTools in packaged builds (default off) */
+  devMode?: boolean
 }
 
 export interface ToolDef {

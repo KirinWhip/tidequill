@@ -113,5 +113,12 @@ export const zhCN = {
   stt: '语音输入', sttEnable: '在输入框显示麦克风按钮',
   sttHint: '使用 OpenAI 兼容的 /audio/transcriptions 接口（例如 OpenAI 的 whisper-1、gpt-4o-mini-transcribe，或兼容的本地服务）。只有点击麦克风按钮后才会录音，麦克风权限也只授予这一功能。没有使用浏览器的 Web Speech（在 Electron 中通常不可用）。',
   sttProvider: '提供方', sttModel: '模型', sttLanguage: '语言（可选，例如 zh、en）',
+  devMode: '开发者模式', devModeHint: '开启后可按 F12 打开开发者工具。默认关闭：开发者工具可以读取和修改应用中的全部数据，只在排查问题时开启。', devtoolsNeedsDevMode: 'F12（需开启开发者模式）',
+  pluginTrustTitle: '加载新插件？', pluginTrustChanged: '插件文件已被修改，需要重新确认', pluginTrustBody: '插件是在本机运行的 JavaScript 代码，拥有与你的用户账户相同的文件和网络权限。它运行在独立的插件进程中（崩溃不会影响应用，也无法访问应用窗口和已解密的设置），但这不是安全沙箱。只加载你信任且核对过来源的插件。',
+  pluginPath: '路径', sha256: 'SHA-256', trustLoad: '信任并加载', notNow: '暂不加载', pluginPending: '等待确认', review: '查看并确认',
+  mcpConfirmTitle: '确认要运行的命令', mcpConfirmBody: '添加 stdio MCP 服务器会在本机启动下面这个程序，它拥有与你的用户账户相同的权限。请确认命令和参数完全符合预期。之后修改命令、参数或环境变量都需要重新确认。',
+  mcpCommandLine: '完整命令行', mcpEnvKeys: '环境变量', approveRun: '确认并启动', mcpNeedsApproval: '命令未确认，未启动', addMcpTitle: '添加 MCP 服务器',
+  grants: '授权管理', grantsHint: '“始终允许”只对某个来源（插件或 MCP 服务器）的某个工具生效。可以在这里逐项撤销，或全部撤销。', grantTools: '始终允许的工具', grantPlugins: '已信任的插件', grantMcp: '已确认的 MCP 命令', revokeAll: '全部撤销', source: '来源', tool: '工具',
+  storageRestored: '检测到数据文件“{key}”已损坏，已从备份 {backup} 自动恢复。损坏的文件已另存为 {file}。', storageReset: '检测到数据文件“{key}”已损坏且没有可用备份，已重置为空。损坏的文件已另存为 {file}。', gotIt: '知道了',
 }
 export type Dict = typeof zhCN

@@ -108,7 +108,26 @@ Use **View request content** to see exactly what was sent.
 ### Plugins
 Drop a CommonJS `.js` file into Plugins/Tools → Open plugin folder. It should export `{ name, description, tools: [{ name, description, parameters, execute }] }`.
 
-The builtin demo tools `get_current_time` and `calculator` are not sent unless you enable them in Settings → Chat. Plugins run in the main process with full local permissions, so only install plugins you trust.
+The builtin demo tools `get_current_time` and `calculator` are not sent unless you enable them in Settings → Chat.
+
+**Plugin risks, please read:**
+- A plugin is JavaScript code that runs on your computer with the same file and network permissions as your user account: it can read, change and delete files you can access and send data over the network. **Only install plugins you trust and whose source you have read.**
+- Since 1.0.1, plugins run in a separate plugin process (Electron utilityProcess), not in the main process. A crash, hang or memory leak in a plugin no longer takes the app down (a call that takes longer than 60 s restarts the plugin process), and plugins cannot reach the app window, IPC, decrypted settings or API keys. **This is not a security sandbox**: the file and network permissions above still apply.
+- Before a plugin is loaded for the first time, the app shows its full path and SHA-256 and waits for your confirmation. If the file changes (different SHA-256), it has to be confirmed again and is not loaded until then.
+- Every tool call by the model asks for confirmation; "Always allow" applies only to that tool of that source (one plugin or one MCP server). Plugins/Tools → Permissions lists all grants, trusted plugins and confirmed MCP commands, each with Revoke, plus Revoke all.
+
+### MCP servers
+- A stdio MCP server starts a program on your computer. When you add one, a dialog shows the full command line and every argument, and the server only starts after you confirm. Changing the command, arguments or environment later needs a new confirmation (unconfirmed servers, e.g. from imported settings, show "Command not confirmed, not started").
+- HTTP servers do not start local programs, so there is no command to confirm; tool calls still ask for confirmation.
+
+### Developer mode
+The installed app disables F12 / developer tools by default (they can read and change all app data). Turn on Settings → General → Developer mode while troubleshooting, then press F12.
+
+### Data safety (atomic writes, automatic backups)
+- Every data file is written to a temporary file, flushed to disk and then renamed over the old one, so a crash or power loss mid-write keeps the previous file.
+- At startup, and while running (at most every 10 minutes per file, only when it changed), data files are copied to `%APPDATA%\Tidequill\backups\<name>\`; the newest 5 copies per file are kept.
+- If a data file cannot be parsed or has the wrong shape at startup, it is renamed to `<name>.corrupt-<time>.json` and the newest valid backup is restored automatically; a banner says which file was restored. Without a valid backup the file is reset, with the same kind of notice.
+- Storage is still JSON files. An evaluation of moving to SQLite is in [docs/sqlite-evaluation.md](docs/sqlite-evaluation.md) (not migrated).
 
 ## Development
 

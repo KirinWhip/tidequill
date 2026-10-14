@@ -3,6 +3,7 @@ import { Plus, Check, XCircle, Download, Upload, Trash2, Loader2, Search, Refres
 import type { AppActions } from '../App'
 import { DEFAULT_PRICES, DEFAULT_CONTEXT_WINDOWS, findPrice } from '../../shared/usage'
 import { ProvidersTab } from './ProvidersTab'
+import { GrantsSection, McpConfirmModal, PluginTrustModal, type PendingPlugin } from './Security'
 import { SearchTab, ChatExtras } from './FeatureSettings'
 import { webdavTest } from '../webdav'
 import type { GalleryImage, McpServerConfig, Persona, PromptItem, ProviderConfig, Settings } from '../../shared/types'
@@ -123,11 +124,13 @@ export function SettingsPanel({ s, t, onChange, actions, initialTab, priceModel 
         <label>{t.fontSize}: {s.fontSize}px<input type="range" min={12} max={22} value={s.fontSize} onChange={e => set({ fontSize: +e.target.value })} /></label>
         <label className="check"><input type="checkbox" checked={s.codeLineNumbers} onChange={e => set({ codeLineNumbers: e.target.checked })} /> {t.codeLineNumbers}</label>
         <label>{t.codeCollapseLines}<input type="number" min={0} value={s.codeCollapseLines} onChange={e => set({ codeCollapseLines: +e.target.value })} /></label>
+        <label className="check"><input type="checkbox" data-testid="dev-mode" checked={!!s.devMode} onChange={e => set({ devMode: e.target.checked })} /> {t.devMode}</label>
+        <div className="meta">{t.devModeHint}</div>
       </div>}
       {tab === 'shortcuts' && <div className="form">
         <label>{t.sendKey}<select value={s.sendKey} onChange={e => set({ sendKey: e.target.value as any })}><option value="Enter">{t.key_enter}</option><option value="Ctrl+Enter">{t.key_ctrlEnter}</option></select></label>
         <table className="sc"><tbody>
-          {([[t.sc_global, s.globalShortcut || '-'], [t.sc_new, `${t.key_ctrl}+N`], [t.sc_search, `${t.key_ctrl}+K`], [t.sc_settings, `${t.key_ctrl}+,`], [t.sc_reasoning, `${t.key_ctrl}+D`], [t.sc_convSettings, `${t.key_ctrl}+Shift+S`], [t.sc_export, `${t.key_ctrl}+E`], [t.sc_sysPrompt, `${t.key_ctrl}+Shift+P`], [t.sc_find, `${t.key_ctrl}+F`], [t.sc_send, s.sendKey === 'Enter' ? t.key_enter : t.key_ctrlEnter], [t.sc_close, t.key_esc], [t.sc_devtools, t.key_f12]] as const).map(([a, b]) =>
+          {([[t.sc_global, s.globalShortcut || '-'], [t.sc_new, `${t.key_ctrl}+N`], [t.sc_search, `${t.key_ctrl}+K`], [t.sc_settings, `${t.key_ctrl}+,`], [t.sc_reasoning, `${t.key_ctrl}+D`], [t.sc_convSettings, `${t.key_ctrl}+Shift+S`], [t.sc_export, `${t.key_ctrl}+E`], [t.sc_sysPrompt, `${t.key_ctrl}+Shift+P`], [t.sc_find, `${t.key_ctrl}+F`], [t.sc_send, s.sendKey === 'Enter' ? t.key_enter : t.key_ctrlEnter], [t.sc_close, t.key_esc], [t.sc_devtools, s.devMode ? t.key_f12 : t.devtoolsNeedsDevMode]] as const).map(([a, b]) =>
             <tr key={a}><td>{a}</td><td><kbd>{b}</kbd></td></tr>)}
         </tbody></table>
       </div>}
@@ -192,41 +195,66 @@ export function ImagesPanel({ s, t, gallery, onChange }: { s: Settings; t: Dict;
 }
 
 export function ToolsPanel({ s, t, onChange }: { s: Settings; t: Dict; onChange(s: Settings): void }) {
-  const [status, setStatus] = useState<any>({ plugins: [], mcp: [] })
-  const [allow, setAllow] = useState<string[]>([])
-  const refresh = () => { api.toolStatus().then(setStatus); api.toolAllowlist().then(setAllow) }
+  const [status, setStatus] = useState<any>({ plugins: [], mcp: [], pendingPlugins: [] })
+  const [draft, setDraft] = useState<McpServerConfig | null>(null)
+  const [confirm, setConfirm] = useState<{ cfg: McpServerConfig; isNew: boolean } | null>(null)
+  const [review, setReview] = useState<PendingPlugin | null>(null)
+  const refresh = () => { api.toolStatus().then(setStatus) }
   useEffect(() => { refresh(); const i = setInterval(refresh, 1500); return () => clearInterval(i) }, [])
   const setServers = (l: McpServerConfig[]) => onChange({ ...s, mcpServers: l })
   const upd = (id: string, p: Partial<McpServerConfig>) => setServers(s.mcpServers.map(x => x.id === id ? { ...x, ...p } : x))
+  const resync = () => api.syncTools(s.mcpServers).then(setStatus)
+  const addServer = (cfg: McpServerConfig) => cfg.type === 'stdio' ? setConfirm({ cfg, isNew: true }) : (setServers([...s.mcpServers, cfg]), setDraft(null))
   return (
     <div className="panel">
       <h2>{t.tools}</h2>
       <label className="check"><input type="checkbox" checked={s.toolsEnabled} onChange={e => onChange({ ...s, toolsEnabled: e.target.checked })} /> {t.toolsEnabled}</label>
       <h3>{t.mcpServers}</h3>
       {s.mcpServers.map(m => { const st = status.mcp.find((x: any) => x.id === m.id); return (
-        <div key={m.id} className="card form">
+        <div key={m.id} className="card form" data-testid="mcp-card">
           <div className="row">
             <input value={m.name} onChange={e => upd(m.id, { name: e.target.value })} placeholder={t.name} />
             <select value={m.type} onChange={e => upd(m.id, { type: e.target.value as any })}><option value="stdio">{t.mcpStdio}</option><option value="http">{t.mcpHttp}</option></select>
             <label className="check"><input type="checkbox" checked={m.enabled} onChange={e => upd(m.id, { enabled: e.target.checked })} />{t.enabled}</label>
-            <button className="danger" onClick={() => setServers(s.mcpServers.filter(x => x.id !== m.id))}>{t.delete}</button>
+            <button className="danger" onClick={() => { api.mcpRevoke(m.id); setServers(s.mcpServers.filter(x => x.id !== m.id)) }}>{t.delete}</button>
           </div>
           {m.type === 'stdio' ? <div className="row">
             <input value={m.command || ''} placeholder={t.command} onChange={e => upd(m.id, { command: e.target.value })} />
             <input value={(m.args || []).join(' ')} placeholder={t.args} onChange={e => upd(m.id, { args: e.target.value.split(' ').filter(Boolean) })} />
           </div> : <input value={m.url || ''} placeholder={t.mcpUrl} onChange={e => upd(m.id, { url: e.target.value })} />}
-          <small>{t.status}: {st ? `${st.status}${st.error ? ' — ' + st.error : ''} · ${st.tools.join(', ')}` : '-'}</small>
+          {st?.status === 'needs-approval' ? <div className="notice warn row" data-testid="mcp-needs-approval">{t.mcpNeedsApproval}
+            <button className="primary sm" data-testid="mcp-review" onClick={() => setConfirm({ cfg: m, isNew: false })}>{t.review}</button></div>
+            : <small>{t.status}: {st ? `${st.status}${st.error ? ' — ' + st.error : ''} · ${st.tools.join(', ')}` : '-'}</small>}
         </div>) })}
+      {draft && <div className="card form" data-testid="mcp-add-form">
+        <b>{t.addMcpTitle}</b>
+        <div className="row">
+          <input data-testid="mcp-add-name" value={draft.name} placeholder={t.name} onChange={e => setDraft({ ...draft, name: e.target.value })} />
+          <select value={draft.type} onChange={e => setDraft({ ...draft, type: e.target.value as any })}><option value="stdio">{t.mcpStdio}</option><option value="http">{t.mcpHttp}</option></select>
+        </div>
+        {draft.type === 'stdio' ? <div className="row">
+          <input data-testid="mcp-add-command" value={draft.command || ''} placeholder={t.command} onChange={e => setDraft({ ...draft, command: e.target.value })} />
+          <input data-testid="mcp-add-args" value={(draft.args || []).join(' ')} placeholder={t.args} onChange={e => setDraft({ ...draft, args: e.target.value.split(' ').filter(Boolean) })} />
+        </div> : <input value={draft.url || ''} placeholder={t.mcpUrl} onChange={e => setDraft({ ...draft, url: e.target.value })} />}
+        <div className="row"><button className="primary" data-testid="mcp-add-save" disabled={!draft.name || (draft.type === 'stdio' ? !draft.command : !draft.url)} onClick={() => addServer(draft)}>{t.add}</button><button onClick={() => setDraft(null)}>{t.cancel}</button></div>
+      </div>}
       <div className="row">
-        <button onClick={() => setServers([...s.mcpServers, { id: uid(), name: 'filesystem', type: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '.'], enabled: false }])}><Plus size={14} />{t.addMcp}</button>
-        <button onClick={() => api.syncTools(s.mcpServers).then(setStatus)}>{t.reconnect}</button>
+        <button data-testid="mcp-add" onClick={() => setDraft({ id: uid(), name: 'filesystem', type: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '.'], enabled: true })}><Plus size={14} />{t.addMcp}</button>
+        <button onClick={resync}>{t.reconnect}</button>
       </div>
-      <h3>{t.alwaysAllowed}</h3>
-      {allow.length === 0 ? <p className="hint">{t.none}</p> : allow.map(n => <div key={n} className="row"><code>{n}</code><button onClick={() => api.revokeTool(n).then(setAllow)}>{t.revoke}</button></div>)}
       <h3>{t.plugins}</h3>
       <p className="hint">{t.pluginHelp}</p>
       <button onClick={() => api.openPluginDir()}>{t.openPluginDir}</button>
+      {(status.pendingPlugins || []).map((p: PendingPlugin) => <div key={p.path} className="card row" data-testid="plugin-pending"><code>{p.file}</code><small className="warn">{t.pluginPending}</small>
+        <button className="primary sm" onClick={() => setReview(p)}>{t.review}</button></div>)}
       {status.plugins.map((p: any) => <div key={p.name} className="card"><b>{p.name}</b> <small>{p.name === 'builtin' ? t.builtinTools : p.description}</small><div>{p.tools.join(', ')}</div></div>)}
+      <GrantsSection t={t} servers={s.mcpServers} onChanged={() => { refresh(); resync() }} />
+      {confirm && <McpConfirmModal cfg={confirm.cfg} t={t} onCancel={() => setConfirm(null)} onApproved={() => {
+        const cfg = { ...confirm.cfg, enabled: true }
+        if (confirm.isNew) { setServers([...s.mcpServers, cfg]); setDraft(null) } else if (!confirm.cfg.enabled) upd(cfg.id, { enabled: true }); else resync()
+        setConfirm(null)
+      }} />}
+      {review && <PluginTrustModal p={review} t={t} onDone={() => { setReview(null); refresh() }} />}
     </div>
   )
 }

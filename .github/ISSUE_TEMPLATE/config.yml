@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability / 报告安全漏洞
+    url: https://github.com/KirinWhip/tidequill/security/advisories/new
+    about: Private report, see SECURITY.md / 私下报告，见 SECURITY.md

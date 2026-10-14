@@ -5,6 +5,7 @@
 //   mock-timeout       accepts the request but never responds
 //   mock-disconnect    streams a few chunks then destroys the socket
 //   mock-tool          first asks to call builtin__get_current_time, then answers
+//   mock-tool-plugin   same, but calls the hello__greet tool of the E2E plugin (runs in the plugin host process)
 //   mock-quota / mock-notfound / mock-context   insufficient balance (402), model not found (404), context too long (400)
 //   mock-poem          four-line poem in a blockquote (single newlines)
 //   (auto-title)       a request whose last message starts with the title prompt gets TITLE back
@@ -135,11 +136,12 @@ export function startMockServer(port = 0, opts = {}) {
       const send = o => res.write(`data: ${JSON.stringify(o)}\n\n`)
       const sleep = ms => new Promise(r => setTimeout(r, ms))
       const lastRole = (j.messages || []).at(-1)?.role
-      if (model === 'mock-tool' && lastRole !== 'tool') {
-        send({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_1', function: { name: 'builtin__get_current_time', arguments: '{}' } }] } }] })
+      if ((model === 'mock-tool' || model === 'mock-tool-plugin') && lastRole !== 'tool') {
+        const call = model === 'mock-tool' ? { name: 'builtin__get_current_time', arguments: '{}' } : { name: 'hello__greet', arguments: '{"who":"e2e"}' }
+        send({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_1', function: call }] } }] })
         res.write('data: [DONE]\n\n'); return res.end()
       }
-      if (model === 'mock-tool') {
+      if (model === 'mock-tool' || model === 'mock-tool-plugin') {
         const toolMsg = j.messages.at(-1)
         send({ choices: [{ delta: { content: 'TOOL_RESULT: ' + String(toolMsg.content).slice(0, 60) } }] })
         res.write('data: [DONE]\n\n'); return res.end()

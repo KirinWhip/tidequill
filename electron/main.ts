@@ -1,9 +1,12 @@
-import { app, BrowserWindow, ipcMain, dialog, session, shell, Menu, net, safeStorage, clipboard, Tray, globalShortcut, nativeImage, nativeTheme, protocol, systemPreferences } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, session, shell, Menu, safeStorage, clipboard, Tray, globalShortcut, nativeImage, nativeTheme, protocol, systemPreferences, utilityProcess } from 'electron'
 import crypto from 'node:crypto'
 import { autoUpdater } from 'electron-updater'
 import path from 'node:path'
 import fs from 'node:fs'
-import { ToolManager } from './tools'
+import { ToolManager, commandLine } from './tools'
+import { PluginHostClient } from './plugin-client'
+import { TrustStore, grantKey, fileSha256, mcpCommandHash } from './trust'
+import { JsonStore, atomicWrite } from './store'
 import { runBridgeRequest, type BridgeRequest } from './http'
 import { encryptSettings, decryptSettings, type Cipher } from './secrets'
 import { mainStrings, type MainLang } from './i18n'
@@ -28,8 +31,13 @@ let micArmedUntil = 0
 const ALLOWED_KEYS = new Set(['settings', 'conversations', 'personas', 'prompts', 'gallery', 'modelCache', 'folders', 'tombstones'])
 const dataDir = () => path.join(app.getPath('userData'), 'data')
 const fileFor = (k: string) => path.join(dataDir(), k + '.json')
-const allowFile = () => path.join(app.getPath('userData'), 'tool-allowlist.json')
+const allowFile = () => path.join(app.getPath('userData'), 'tool-allowlist.json') // pre-1.0.1 unscoped grants (dropped)
 let tools: ToolManager
+let trust: TrustStore
+let store: JsonStore
+/** developer mode (Round 2 · D, item 20): packaged builds only open DevTools when Settings > General > Developer mode is on */
+let devMode = false
+const devToolsAllowed = () => devMode || !app.isPackaged
 /** Provider / WebDAV requests use an in-memory session (no 'persist:' prefix, no HTTP cache).
  *  Reason (root cause of the flaky Windows E2E timeouts in Round 2 · A): with the default persistent session the FIRST
  *  request of every app start waits until Chromium has loaded the on-disk SQLite cookie store of the profile
@@ -55,8 +63,7 @@ const cipher: Cipher = {
 }
 
 function readJSON(f: string) { try { return JSON.parse(fs.readFileSync(f, 'utf8')) } catch { return undefined } }
-function writeJSON(f: string, v: any) { fs.writeFileSync(f + '.tmp', JSON.stringify(v)); fs.renameSync(f + '.tmp', f) }
-const readAllow = (): string[] => readJSON(allowFile()) || []
+function writeJSON(f: string, v: any) { atomicWrite(f, JSON.stringify(v)) }
 
 /** custom title bar: the renderer draws it, the OS keeps only the window buttons (Window Controls Overlay)
  *  whose colors follow the app theme, not the system accent color */
@@ -94,8 +101,10 @@ function createWindow() {
   else win.loadFile(path.join(__dirname, '../dist/index.html'))
   win.on('close', e => { if (tray && !quitting) { e.preventDefault(); win?.hide() } }) // keep running in tray
   win.webContents.on('before-input-event', (_e, input) => {
-    if (input.type === 'keyDown' && input.key === 'F12') win?.webContents.toggleDevTools()
+    if (input.type === 'keyDown' && input.key === 'F12' && devToolsAllowed()) win?.webContents.toggleDevTools()
   })
+  // any other way of opening DevTools (e.g. a stray shortcut) is closed again unless developer mode is on
+  win.webContents.on('devtools-opened', () => { if (!devToolsAllowed()) win?.webContents.closeDevTools() })
 }
 
 /** 1.0 renamed the app; copy data once from the pre-1.0 profile folder so upgrades keep their conversations */
@@ -116,8 +125,18 @@ export const ABOUT = { name: 'Tidequill', nameZh: '\u6f6e\u7b3a', license: 'MIT'
 app.whenReady().then(() => {
   migrateLegacyProfile()
   fs.mkdirSync(dataDir(), { recursive: true })
-  tools = new ToolManager(path.join(app.getPath('userData'), 'plugins'))
-  tools.loadPlugins()
+  store = new JsonStore(dataDir(), path.join(app.getPath('userData'), 'backups'))
+  // corruption check + backup rotation at startup (a corrupt file is restored from the newest valid backup)
+  for (const k of ALLOWED_KEYS) { store.read(k); store.backup(k) }
+  devMode = !!store.read('settings')?.devMode
+  trust = new TrustStore(path.join(app.getPath('userData'), 'trust.json'), allowFile())
+  const hostScript = path.join(__dirname, 'plugin-host.js')
+  const host = new PluginHostClient(() => {
+    const p = utilityProcess.fork(hostScript, [], { serviceName: 'Tidequill plugin host', stdio: 'inherit' })
+    return { post: m => p.postMessage(m), onMessage: cb => p.on('message', cb), onExit: cb => p.on('exit', cb), kill: () => { p.kill() }, get pid() { return p.pid } }
+  })
+  tools = new ToolManager(path.join(app.getPath('userData'), 'plugins'), host, trust)
+  const pluginsReady = tools.loadPlugins()
   // deny all permission requests (camera, geolocation, ...) — not needed by the app
   // the only exception: audio-only capture from the app's main frame right after the voice-input button armed it
   session.defaultSession.setPermissionRequestHandler((wc, perm, cb, details: any) => {
@@ -181,7 +200,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle('kv:get', (_e, k: string) => {
     if (!ALLOWED_KEYS.has(k)) throw new Error('invalid key')
-    const v = readJSON(fileFor(k))
+    const v = store.read(k)
     if (k !== 'settings' || !v) return v
     const { settings, needsMigration } = decryptSettings(v, cipher)
     if (needsMigration) writeJSON(fileFor(k), encryptSettings(v, cipher)) // migrate plaintext keys
@@ -189,8 +208,12 @@ app.whenReady().then(() => {
   })
   ipcMain.handle('kv:set', (_e, k: string, v: any) => {
     if (!ALLOWED_KEYS.has(k)) throw new Error('invalid key')
-    writeJSON(fileFor(k), k === 'settings' ? encryptSettings(v, cipher) : v)
+    store.write(k, k === 'settings' ? encryptSettings(v, cipher) : v)
   })
+  ipcMain.handle('storage:notices', () => store.notices)
+  ipcMain.handle('storage:dismiss', () => { store.notices = [] })
+  ipcMain.handle('devmode:set', (_e, on: boolean) => { devMode = !!on; if (!devToolsAllowed()) win?.webContents.closeDevTools(); return { devMode, packaged: app.isPackaged } })
+  ipcMain.handle('devtools:isOpen', () => !!win?.webContents.isDevToolsOpened())
   ipcMain.handle('secure:status', () => ({ available: safeStorage.isEncryptionAvailable(), backend: process.platform === 'linux' ? (safeStorage as any).getSelectedStorageBackend?.() : 'os' }))
   ipcMain.handle('proxy:set', async (_e, proxy: string) => {
     const cfg: Electron.ProxyConfig = proxy ? { proxyRules: proxy, proxyBypassRules: 'localhost,127.0.0.1,<local>' } : { mode: 'system' }
@@ -235,21 +258,41 @@ app.whenReady().then(() => {
   })
 
   // ---- tools: every call needs user confirmation unless "always allow" was chosen ----
-  ipcMain.handle('tools:sync', async (_e, servers) => { tools.loadPlugins(); await tools.syncMcp(servers); return tools.status() })
-  ipcMain.handle('tools:status', () => tools.status())
+  ipcMain.handle('tools:sync', async (_e, servers) => { await tools.loadPlugins(); await tools.syncMcp(servers); return tools.status() })
+  ipcMain.handle('tools:status', async () => { await pluginsReady; return tools.status() })
   ipcMain.handle('tools:list', () => tools.listTools())
-  ipcMain.handle('tools:allowlist', () => readAllow())
-  ipcMain.handle('tools:revoke', (_e, name: string) => { writeJSON(allowFile(), readAllow().filter(x => x !== name)); return readAllow() })
+  ipcMain.handle('tools:grants', () => trust.read())
+  ipcMain.handle('tools:revoke', (_e, key: string) => trust.update(t => { t.grants = t.grants.filter(x => x !== key) }))
+  ipcMain.handle('tools:revokeAll', async () => { const t = trust.update(t => { t.grants = []; t.plugins = {}; t.mcp = {} }); await tools.loadPlugins(); return t })
+  // plugin first load: the renderer shows path + SHA-256; main re-hashes the file so only the confirmed content is trusted
+  ipcMain.handle('plugins:trust', async (_e, file: string, sha: string) => {
+    const p = tools.pending.find(x => x.path === file)
+    if (!p) return { ok: false, error: 'unknown plugin' }
+    if (fileSha256(p.path) !== sha) return { ok: false, error: 'file changed, review again' }
+    trust.update(t => { t.plugins[p.path] = sha })
+    await tools.loadPlugins(); return { ok: true, status: tools.status() }
+  })
+  ipcMain.handle('plugins:untrust', async (_e, file: string) => {
+    trust.update(t => { delete t.plugins[file]; const name = tools.plugins.find(x => x.file === file)?.name; if (name) t.grants = t.grants.filter(g => !g.startsWith(`plugin:${name}::`)) })
+    await tools.loadPlugins(); return tools.status()
+  })
+  // MCP stdio: the renderer shows the exact command line; approval is bound to a hash of command + args + env
+  ipcMain.handle('mcp:preview', (_e, cfg) => ({ commandLine: commandLine(cfg), envKeys: Object.keys(cfg?.env || {}), approved: trust.read().mcp[cfg?.id] === mcpCommandHash(cfg || {}) }))
+  ipcMain.handle('mcp:approve', (_e, cfg) => { trust.update(t => { t.mcp[String(cfg.id)] = mcpCommandHash(cfg) }); return true })
+  ipcMain.handle('mcp:revoke', (_e, id: string) => trust.update(t => { delete t.mcp[id]; t.grants = t.grants.filter(g => !g.startsWith(`mcp:${id}::`)) }))
   ipcMain.handle('tools:call', async (_e, name: string, args: any) => {
-    if (!readAllow().includes(name)) {
+    const src = tools.resolve(name)
+    if (!src) return `Tool not found: ${name}`
+    const key = grantKey(src.source, src.tool)
+    if (!trust.read().grants.includes(key)) {
       const s = mainStrings[lang]
       const r = await dialog.showMessageBox(win!, {
         type: 'question', title: s.toolTitle, message: s.toolMessage.replace('{name}', name),
-        detail: s.toolDetail.replace('{args}', JSON.stringify(args, null, 2)),
-        buttons: [s.allow, s.deny], defaultId: 1, cancelId: 1, checkboxLabel: s.always, checkboxChecked: false, noLink: true,
+        detail: s.toolSource.replace('{source}', src.label) + '\n' + s.toolDetail.replace('{args}', JSON.stringify(args, null, 2)),
+        buttons: [s.allow, s.deny], defaultId: 1, cancelId: 1, checkboxLabel: s.always.replace('{source}', src.label), checkboxChecked: false, noLink: true,
       })
       if (r.response !== 0) return s.denied
-      if (r.checkboxChecked) writeJSON(allowFile(), [...new Set([...readAllow(), name])])
+      if (r.checkboxChecked) trust.update(t => { t.grants = [...new Set([...t.grants, key])] })
     }
     return tools.callTool(name, args)
   })

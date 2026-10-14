@@ -9,7 +9,7 @@ const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 
 describe('rename & release metadata', () => {
   it('package metadata uses the new name, MIT license and author', () => {
-    expect(pkg.name).toBe('tidequill'); expect(pkg.productName).toBe('Tidequill'); expect(pkg.version).toBe('1.0.0')
+    expect(pkg.name).toBe('tidequill'); expect(pkg.productName).toBe('Tidequill'); expect(pkg.version).toMatch(/^1\.0\.\d+$/)
     expect(pkg.license).toBe('MIT'); expect(pkg.author.name).toBe('追逐')
     expect(pkg.build.appId).toBe('io.github.kirinwhip.tidequill'); expect(pkg.build.win.icon).toBe('build/icon.ico')
     expect(pkg.build.publish[0].repo).toBe('tidequill')

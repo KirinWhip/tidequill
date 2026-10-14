@@ -1,7 +1,7 @@
 {
   "name": "tidequill",
   "productName": "Tidequill",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Tidequill (潮笺) — an independent open-source desktop AI chat client",
   "author": {
     "name": "追逐",
@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "concurrently -k \"vite\" \"npm:dev:electron\"",
     "dev:electron": "npm run build:main && wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .",
-    "build:main": "esbuild electron/main.ts electron/preload.ts --bundle --platform=node --format=cjs --outdir=dist-electron --external:electron --target=node20 --metafile=build-meta/main-meta.json",
+    "build:main": "esbuild electron/main.ts electron/preload.ts electron/plugin-host.ts --bundle --platform=node --format=cjs --outdir=dist-electron --external:electron --target=node20 --metafile=build-meta/main-meta.json",
     "build": "tsc --noEmit && vite build && npm run build:main && node scripts/gen-notices.mjs",
     "start": "electron .",
     "test": "vitest run",
@@ -135,5 +135,8 @@
     "url": "https://github.com/KirinWhip/tidequill.git"
   },
   "license": "MIT",
-  "homepage": "https://github.com/KirinWhip/tidequill"
+  "homepage": "https://github.com/KirinWhip/tidequill",
+  "overrides": {
+    "katex": "$katex"
+  }
 }

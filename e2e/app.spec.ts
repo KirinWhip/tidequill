@@ -168,7 +168,8 @@ test('tool calls require confirmation (deny, then always allow)', async () => {
   // second time: allow + always
   await send(page, '再问一次')
   await expect(page.locator('.msg.assistant .bubble').last()).toContainText(/TOOL_RESULT: \w{3} /, { timeout: 10_000 })
-  expect(JSON.parse(fs.readFileSync(path.join(ud, 'tool-allowlist.json'), 'utf8'))).toEqual(['builtin__get_current_time'])
+  // 1.0.1: grants are scoped per source + tool
+  expect(JSON.parse(fs.readFileSync(path.join(ud, 'trust.json'), 'utf8')).grants).toEqual(['plugin:builtin::get_current_time'])
   // third time: no dialog
   await send(page, '第三次')
   await expect(page.locator('.msg.assistant')).toHaveCount(6, { timeout: 10_000 })

@@ -14,6 +14,7 @@ import { MdOptionsCtx } from './components/Markdown'
 import { ChatView } from './components/ChatView'
 import { Sidebar } from './components/Sidebar'
 import { Onboarding } from './components/Onboarding'
+import { PluginTrustModal, StorageNotices, type PendingPlugin } from './components/Security'
 import { ConvSettings } from './components/ConvSettings'
 import { webdavGet, webdavPut, webdavTest } from './webdav'
 import { MessageSquare, MessageSquarePlus, X, CheckCircle2 } from 'lucide-react'
@@ -50,6 +51,8 @@ export default function App() {
   const [sysDark, setSysDark] = useState(matchMedia('(prefers-color-scheme: dark)').matches)
   const [sysLocale, setSysLocale] = useState('zh-CN')
   const tombstones = useRef<Record<string, number>>({})
+  const [pendingPlugins, setPendingPlugins] = useState<PendingPlugin[]>([])
+  const [skippedPlugins, setSkippedPlugins] = useState<string[]>([])
 
   useEffect(() => {
     (async () => {
@@ -62,7 +65,7 @@ export default function App() {
       setConvs(list); setCurId(list[0]?.id || '')
       setFolders(await storage.loadFolders()); tombstones.current = await storage.loadTombstones()
       setPersonas(await storage.loadPersonas(d)); setPrompts(await storage.loadPrompts(d)); setGallery(await storage.loadGallery())
-      api.setProxy(s.proxy); api.syncTools(s.mcpServers)
+      api.setProxy(s.proxy); api.setDevMode(!!s.devMode); api.syncTools(s.mcpServers).then((st: any) => setPendingPlugins(st?.pendingPlugins || []))
       if (s.autoCheckUpdate) api.checkUpdate().then((r: any) => r?.status === 'available' && setUpdate(r))
     })()
     const mq = matchMedia('(prefers-color-scheme: dark)'); const f = () => setSysDark(mq.matches)
@@ -89,6 +92,7 @@ export default function App() {
     const prev = settings
     setSettings(s); storage.saveSettings(s); setRequestTimeout(s.requestTimeout)
     if (prev?.proxy !== s.proxy) api.setProxy(s.proxy)
+    if (!!prev?.devMode !== !!s.devMode) api.setDevMode(!!s.devMode)
     if (JSON.stringify(prev?.mcpServers) !== JSON.stringify(s.mcpServers)) api.syncTools(s.mcpServers)
   }
 
@@ -408,6 +412,8 @@ export default function App() {
       </div>}
       {convForSettings && <ConvSettings conv={convForSettings} settings={settings} lastRequest={lastRequests[convForSettings.id]} folders={folders} onPatch={fn => patchConv(convForSettings.id, fn)} onClose={() => setConvSettingsId('')} />}
       {needsOnboarding && <Onboarding settings={settings} onDone={s => saveSettings({ ...s, onboarded: true })} />}
+      {modal !== 'tools' && pendingPlugins.filter(p => !skippedPlugins.includes(p.path)).slice(0, 1).map(p => <PluginTrustModal key={p.path} p={p} t={t} onDone={() => { setSkippedPlugins(l => [...l, p.path]); api.toolStatus().then((st: any) => setPendingPlugins(st?.pendingPlugins || [])) }} />)}
+      <StorageNotices t={t} />
       {toast && <div className="toast" role="status"><CheckCircle2 size={14} />{toast}</div>}
     </div>
     </div>

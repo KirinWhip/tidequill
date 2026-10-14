@@ -1,0 +1,55 @@
+name: Bug report / 问题反馈
+description: Something does not work as expected / 功能异常
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not paste API keys, tokens or private conversation content. Security vulnerabilities: see SECURITY.md, do not open a public issue.
+        请不要粘贴 API 密钥、令牌或私密对话内容。安全漏洞请按 SECURITY.md 私下报告，不要公开提 issue。
+  - type: input
+    id: version
+    attributes:
+      label: Version / 版本
+      description: Settings → System, or About / 设置 → 系统，或“关于”
+      placeholder: 1.0.1
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS / 操作系统
+      options: [Windows 11, Windows 10, macOS, Linux, Other]
+    validations:
+      required: true
+  - type: dropdown
+    id: package
+    attributes:
+      label: Package / 安装方式
+      options: [Installer / 安装版, Portable / 便携版, Built from source / 源码构建]
+  - type: input
+    id: provider
+    attributes:
+      label: Provider and model / 提供方与模型
+      placeholder: DeepSeek / deepseek-v4-pro
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / 复现步骤
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs. actual / 期望结果与实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error message or screenshot / 错误信息或截图
+      description: Remove keys and personal paths first / 请先去掉密钥和个人路径
