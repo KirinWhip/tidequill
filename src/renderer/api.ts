@@ -2,11 +2,13 @@ import { Storage, type KV } from '../shared/storage'
 import { ProviderError } from '../shared/errors'
 declare global { interface Window { api: any } }
 
+const devMemory = new Map<string, string>()
 const hasApi = typeof window !== 'undefined' && !!window.api
 // Fallback for running the renderer in a plain browser (vite dev without electron)
 export const api = hasApi ? window.api : {
-  kvGet: async (k: string) => { const v = localStorage.getItem(k); return v ? JSON.parse(v) : undefined },
-  kvSet: async (k: string, v: any) => localStorage.setItem(k, JSON.stringify(v)),
+  // plain-browser dev mode keeps data in memory only: nothing (in particular no API key) is written to localStorage
+  kvGet: async (k: string) => { const v = devMemory.get(k); return v ? JSON.parse(v) : undefined },
+  kvSet: async (k: string, v: any) => { devMemory.set(k, JSON.stringify(v)) },
   secureStatus: async () => ({ available: false }), setProxy: async () => {}, locale: async () => navigator.language, setLanguage: async () => {},
   saveFile: async (name: string, content: string) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([content])); a.download = name; a.click(); return true },
   openFile: async () => null,

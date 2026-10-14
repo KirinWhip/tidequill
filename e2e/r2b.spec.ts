@@ -101,8 +101,11 @@ test('provider settings: status badges, key show/hide, test connection, chips, s
   await page.getByTestId('model-filter').fill('slow')
   await expect(page.locator('.mchip')).toHaveCount(1)
   await page.getByTestId('model-filter').fill('')
+  // the "saved" flag is transient (2.5 s); on a slow Windows runner it could be gone before the first poll.
+  // assert the persistent save counter instead, and the flag only in its rendered form
+  const before = Number(await page.getByTestId('settings-title').getAttribute('data-save-count'))
   await page.locator('.mchip[data-model="mock-slow"] input').uncheck()
-  await expect(page.getByTestId('saved-flag')).toBeVisible()
+  await expect(page.getByTestId('settings-title')).toHaveAttribute('data-save-count', String(before + 1))
   await page.getByTestId('model-add').fill('my-new-model'); await page.getByTestId('model-add').press('Enter')
   await expect(page.locator('.mchip[data-model="my-new-model"]')).toBeVisible()
   await page.getByRole('button', { name: `${zhCN.removeModel} gpt-4o-mock` }).click()

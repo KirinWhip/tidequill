@@ -1,3 +1,5 @@
+import { randomToken } from './random'
+export { randomToken }
 import type { Conversation, Folder, GalleryImage, Persona, PromptItem, Settings } from './types'
 import { DEFAULT_PRICES, DEFAULT_CONTEXT_WINDOWS } from './usage'
 import { DEFAULT_WEB_SEARCH } from './websearch'
@@ -16,7 +18,7 @@ export class MemoryKV implements KV {
   async set(k: string, v: any) { this.data.set(k, JSON.stringify(v)) }
 }
 
-export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
+export const uid = () => randomToken(6) + Date.now().toString(36)
 
 export function defaultSettings(): Settings {
   return {
