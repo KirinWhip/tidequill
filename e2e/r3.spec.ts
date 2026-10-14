@@ -142,6 +142,8 @@ test('A6: plaintext keys never reach the renderer (window state, IPC payloads, s
   await page.getByTestId('api-key-clear').click()
   await expect(page.getByTestId('api-key')).toHaveValue('')
   await expect(page.getByTestId('badge-mock')).toHaveAttribute('data-state', 'nokey')
+})
+
 test('B7: provider badges 未配置 / 连接正常 / 连接失败 with last test time; Ollama probed', async () => {
   ;({ app, page } = await launch(seedUserData({ mockUrl: mock.url, settings: { providers: [
     { id: 'mock', name: 'OpenAI 兼容', type: 'openai', apiKey: 'sk-mock-1', baseURL: mock.url, models: ['mock-ok'] },
