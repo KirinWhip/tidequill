@@ -33,6 +33,9 @@ export interface Message {
   error?: string
   errorCode?: string
   reasoning?: string
+  usage?: { input: number; output: number; estimated?: boolean }
+  quote?: string
+  status?: string // transient (e.g. retry notice)
   createdAt: number
 }
 
@@ -45,9 +48,18 @@ export interface Conversation {
   systemPrompt: string
   pinned: boolean
   reasoning?: boolean // deep thinking toggle
+  params?: ConvParams // per-conversation overrides of global defaults
+  folderId?: string
+  tags?: string[]
+  branches?: Record<string, import('./branches').BranchPoint>
+  forkOf?: { id: string; messageId: string }
   createdAt: number
   updatedAt: number
 }
+
+export interface ConvParams { temperature?: number; topP?: number; maxTokens?: number; contextLength?: number }
+export interface Folder { id: string; name: string; collapsed?: boolean }
+export interface WebDavConfig { url: string; username: string; password: string; enabled: boolean; lastSync?: number }
 
 export interface Persona {
   id: string
@@ -98,6 +110,17 @@ export interface Settings {
   toolsEnabled: boolean
   codeLineNumbers: boolean
   codeCollapseLines: number // collapse code blocks longer than this (0 = never)
+  topP: number
+  retries: number
+  retryBaseMs: number
+  showUsage: boolean
+  prices: import('./usage').Price[]
+  webdav: WebDavConfig
+  globalShortcut: string
+  tray: boolean
+  launchAtLogin: boolean
+  autoCheckUpdate: boolean
+  onboarded: boolean
 }
 
 export interface ToolDef {

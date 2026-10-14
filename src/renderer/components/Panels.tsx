@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Plus, Check, XCircle, Download, Trash2, Loader2 } from 'lucide-react'
+import { Plus, Check, XCircle, Download, Upload, Trash2, Loader2, Search, RefreshCw } from 'lucide-react'
+import type { AppActions } from '../App'
+import { DEFAULT_PRICES } from '../../shared/usage'
+import { webdavTest } from '../webdav'
 import type { GalleryImage, McpServerConfig, Persona, PromptItem, ProviderConfig, Settings } from '../../shared/types'
 import type { Dict } from '../i18n'
 import { uid } from '../../shared/storage'
@@ -9,23 +12,35 @@ import { ProviderError } from '../../shared/errors'
 
 const errText = (t: Dict, e: any) => e instanceof ProviderError ? `${(t as any)['err_' + e.code] || t.err_unknown}${e.detail ? ' (' + e.detail.slice(0, 120) + ')' : ''}` : t.err_unknown
 
-export function SettingsPanel({ s, t, onChange }: { s: Settings; t: Dict; onChange(s: Settings): void }) {
-  const [tab, setTab] = useState<'general' | 'chat' | 'providers' | 'shortcuts'>('providers')
+export function SettingsPanel({ s, t, onChange, actions }: { s: Settings; t: Dict; onChange(s: Settings): void; actions: AppActions }) {
+  type Tab = 'providers' | 'chat' | 'network' | 'usageSettings' | 'data' | 'systemTab' | 'general' | 'shortcuts'
+  const [tab, setTab] = useState<Tab>('providers')
   const set = (p: Partial<Settings>) => onChange({ ...s, ...p })
   const setProv = (id: string, p: Partial<ProviderConfig>) => set({ providers: s.providers.map(x => x.id === id ? { ...x, ...p } : x) })
   const [sel, setSel] = useState(s.providers[0]?.id)
   const prov = s.providers.find(p => p.id === sel)
   const [msg, setMsg] = useState<any>('')
   const [secure, setSecure] = useState(true)
-  useEffect(() => { api.secureStatus().then((r: any) => setSecure(!!r.available)) }, [])
+  const [version, setVersion] = useState('')
+  const [includeKeys, setIncludeKeys] = useState(false)
+  useEffect(() => { api.secureStatus().then((r: any) => setSecure(!!r.available)); api.version().then(setVersion) }, [])
+  useEffect(() => setMsg(''), [tab, sel])
+  const busy = () => setMsg(<Loader2 size={14} className="spin" />)
+  const ok = (x: any) => setMsg(<span className="okmsg" data-testid="settings-msg"><Check size={14} />{x}</span>)
+  const fail = (x: any) => setMsg(<span className="errmsg" data-testid="settings-msg"><XCircle size={14} />{x}</span>)
+  const wd = s.webdav
+  const setWd = (p: Partial<Settings['webdav']>) => set({ webdav: { ...wd, ...p } })
+  const tabs: Tab[] = ['providers', 'chat', 'network', 'usageSettings', 'data', 'systemTab', 'general', 'shortcuts']
+  const sys = actions.systemStatus || {}
   return (
     <div className="panel">
       <h2>{t.settings}</h2>
-      <div className="tabs">{(['providers', 'chat', 'general', 'shortcuts'] as const).map(k => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{t[k]}</button>)}</div>
+      <div className="tabs">{tabs.map(k => <button key={k} data-tab={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{t[k]}</button>)}</div>
       {tab === 'providers' && <div className="split">
         <div className="plist">
           {s.providers.map(p => <div key={p.id} className={'pitem' + (p.id === sel ? ' on' : '')} onClick={() => setSel(p.id)}>{p.name} {(p.apiKey || p.type === 'ollama') && <Check size={13} className="ok-icon" aria-label={t.apiKey} />}</div>)}
           <button onClick={() => { const id = uid(); set({ providers: [...s.providers, { id, name: t.customProvider, type: 'openai', apiKey: '', baseURL: 'https://', models: [] }] }); setSel(id) }}><Plus size={14} />{t.addProvider}</button>
+          <button data-testid="ollama-detect" onClick={async () => { busy(); const r = await actions.detectOllama(); r.ok ? ok(t.ollamaFound + r.count) : fail(t.ollamaNotFound.replace('{url}', r.url)) }}><Search size={14} />{t.ollamaDetect}</button>
         </div>
         {prov && <div className="form">
           <label>{t.name}<input value={prov.name} onChange={e => setProv(prov.id, { name: e.target.value })} /></label>
@@ -35,9 +50,8 @@ export function SettingsPanel({ s, t, onChange }: { s: Settings; t: Dict; onChan
           <label>{t.baseURL}<input value={prov.baseURL} onChange={e => setProv(prov.id, { baseURL: e.target.value })} /></label>
           <label>{t.models}<textarea rows={3} value={prov.models.join(', ')} onChange={e => setProv(prov.id, { models: e.target.value.split(/[,\n]/).map(x => x.trim()).filter(Boolean) })} /></label>
           <div className="row">
-            <button onClick={async () => { setMsg(<Loader2 size={14} className="spin" />); try { const m = await listModels(prov, bridgeFetch); setProv(prov.id, { models: m }); setMsg(<span className="okmsg"><Check size={14} />{m.length}</span>) } catch (e: any) { setMsg(<span className="errmsg"><XCircle size={14} />{errText(t, e)}</span>) } }}>{t.fetchModels}</button>
+            <button onClick={async () => { busy(); try { const m = await listModels(prov, bridgeFetch); setProv(prov.id, { models: m }); ok(m.length) } catch (e: any) { fail(errText(t, e)) } }}>{t.fetchModels}</button>
             <button className="danger" onClick={() => { set({ providers: s.providers.filter(x => x.id !== prov.id) }); setSel(s.providers[0]?.id) }}>{t.delete}</button>
-            <span>{msg}</span>
           </div>
           <label>{t.defaultModel}<div className="row"><select title={t.provider} value={s.defaultProviderId} onChange={e => set({ defaultProviderId: e.target.value })}>{s.providers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
             <input value={s.defaultModel} onChange={e => set({ defaultModel: e.target.value })} /></div></label>
@@ -45,10 +59,56 @@ export function SettingsPanel({ s, t, onChange }: { s: Settings; t: Dict; onChan
       </div>}
       {tab === 'chat' && <div className="form">
         <label>{t.temperature}: {s.temperature}<input type="range" min={0} max={2} step={0.1} value={s.temperature} onChange={e => set({ temperature: +e.target.value })} /></label>
+        <label>{t.topP}: {s.topP}<input type="range" min={0} max={1} step={0.05} value={s.topP} onChange={e => set({ topP: +e.target.value })} /></label>
         <label>{t.maxTokens}<input type="number" value={s.maxTokens} onChange={e => set({ maxTokens: +e.target.value })} /></label>
         <label>{t.contextLength}: {s.contextLength}<input type="range" min={1} max={100} value={s.contextLength} onChange={e => set({ contextLength: +e.target.value })} /></label>
-        <label>{t.requestTimeout}<input type="number" min={1} value={s.requestTimeout} onChange={e => set({ requestTimeout: +e.target.value })} /></label>
         <label className="check"><input type="checkbox" checked={s.toolsEnabled} onChange={e => set({ toolsEnabled: e.target.checked })} /> {t.toolsEnabled}</label>
+      </div>}
+      {tab === 'network' && <div className="form">
+        <label>{t.proxy}<input value={s.proxy} placeholder={t.proxyExample} onChange={e => set({ proxy: e.target.value })} /></label>
+        <label>{t.requestTimeout}<input type="number" min={1} value={s.requestTimeout} onChange={e => set({ requestTimeout: +e.target.value })} /></label>
+        <label>{t.retries}<input type="number" min={0} max={10} value={s.retries} onChange={e => set({ retries: Math.max(0, +e.target.value) })} /></label>
+        <label>{t.retryBaseMs}<input type="number" min={0} step={100} value={s.retryBaseMs} onChange={e => set({ retryBaseMs: Math.max(0, +e.target.value) })} /></label>
+      </div>}
+      {tab === 'usageSettings' && <div className="form">
+        <label className="check"><input type="checkbox" checked={s.showUsage} onChange={e => set({ showUsage: e.target.checked })} /> {t.showUsage}</label>
+        <div className="meta">{t.priceTable}</div>
+        <table className="pricetable"><thead><tr><th>{t.pricePattern}</th><th>{t.priceInput}</th><th>{t.priceOutput}</th><th /></tr></thead><tbody>
+          {s.prices.map((p, i) => <tr key={i}>
+            <td><input aria-label={t.pricePattern} value={p.pattern} onChange={e => set({ prices: s.prices.map((x, j) => j === i ? { ...x, pattern: e.target.value } : x) })} /></td>
+            <td><input aria-label={t.priceInput} type="number" step="0.01" value={p.input} onChange={e => set({ prices: s.prices.map((x, j) => j === i ? { ...x, input: +e.target.value } : x) })} /></td>
+            <td><input aria-label={t.priceOutput} type="number" step="0.01" value={p.output} onChange={e => set({ prices: s.prices.map((x, j) => j === i ? { ...x, output: +e.target.value } : x) })} /></td>
+            <td><button className="icon-btn sm" title={t.delete} aria-label={t.delete} onClick={() => set({ prices: s.prices.filter((_, j) => j !== i) })}><Trash2 size={13} /></button></td>
+          </tr>)}
+        </tbody></table>
+        <div className="row"><button onClick={() => set({ prices: [{ pattern: '', input: 0, output: 0 }, ...s.prices] })}><Plus size={14} />{t.addPrice}</button>
+          <button onClick={() => set({ prices: DEFAULT_PRICES })}>{t.resetPrices}</button></div>
+      </div>}
+      {tab === 'data' && <div className="form">
+        <div className="row"><button data-testid="backup" onClick={() => actions.backup(includeKeys)}><Download size={14} />{t.backup}</button>
+          <button data-testid="restore" onClick={() => actions.restore()}><Upload size={14} />{t.restore}</button></div>
+        <label className="check"><input type="checkbox" checked={includeKeys} onChange={e => setIncludeKeys(e.target.checked)} /> {t.backupIncludeKeys}</label>
+        <h3>{t.webdav}</h3>
+        <label className="check"><input type="checkbox" checked={wd.enabled} onChange={e => setWd({ enabled: e.target.checked })} /> {t.webdavEnable}</label>
+        <label>{t.webdavUrl}<input value={wd.url} onChange={e => setWd({ url: e.target.value })} /></label>
+        <label>{t.webdavUser}<input value={wd.username} onChange={e => setWd({ username: e.target.value })} /></label>
+        <label>{t.webdavPass}<input type="password" value={wd.password} onChange={e => setWd({ password: e.target.value })} /></label>
+        <div className="row">
+          <button data-testid="webdav-test" onClick={async () => { busy(); try { await webdavTest(wd); ok(t.webdavOk) } catch (e: any) { fail(errText(t, e)) } }}>{t.webdavTest}</button>
+          <button data-testid="webdav-sync" disabled={!wd.enabled || !wd.url} onClick={async () => { busy(); try { ok(t.webdavSynced + await actions.sync()) } catch (e: any) { fail(errText(t, e)) } }}><RefreshCw size={14} />{t.webdavSync}</button>
+        </div>
+        {wd.lastSync && <div className="meta">{t.webdavLast}{new Date(wd.lastSync).toLocaleString()}</div>}
+      </div>}
+      {tab === 'systemTab' && <div className="form">
+        <label>{t.globalShortcut}<input value={s.globalShortcut} onChange={e => set({ globalShortcut: e.target.value })} />
+          {s.globalShortcut && sys.shortcut === false && <small className="warn">{t.globalShortcutFail}</small>}</label>
+        <label className="check"><input type="checkbox" checked={s.tray} onChange={e => set({ tray: e.target.checked })} /> {t.trayEnable}</label>
+        <label className="check"><input type="checkbox" checked={s.launchAtLogin} disabled={sys.loginSupported === false} onChange={e => set({ launchAtLogin: e.target.checked })} /> {t.launchAtLogin}
+          {sys.loginSupported === false && <small className="warn">{t.launchAtLoginUnsupported}</small>}</label>
+        <label className="check"><input type="checkbox" checked={s.autoCheckUpdate} onChange={e => set({ autoCheckUpdate: e.target.checked })} /> {t.autoCheckUpdate}</label>
+        <div className="row"><span className="meta">{t.currentVersion}{version}</span>
+          <button data-testid="check-update" onClick={async () => { busy(); const r = await actions.checkUpdate()
+            r.status === 'available' ? ok(t.updateAvailable + r.latest) : r.status === 'latest' ? ok(t.updateLatest) : r.status === 'unsupported' ? fail(t.updateUnsupported) : fail(t.updateError + (r.error || '')) }}>{t.checkUpdate}</button></div>
       </div>}
       {tab === 'general' && <div className="form">
         <label>{t.language}<select value={s.language} onChange={e => set({ language: e.target.value as any })}><option value="system">{t.langSystem}</option><option value="zh">{t.langZh}</option><option value="en">{t.langEn}</option></select></label>
@@ -56,15 +116,15 @@ export function SettingsPanel({ s, t, onChange }: { s: Settings; t: Dict; onChan
         <label>{t.fontSize}: {s.fontSize}px<input type="range" min={12} max={22} value={s.fontSize} onChange={e => set({ fontSize: +e.target.value })} /></label>
         <label className="check"><input type="checkbox" checked={s.codeLineNumbers} onChange={e => set({ codeLineNumbers: e.target.checked })} /> {t.codeLineNumbers}</label>
         <label>{t.codeCollapseLines}<input type="number" min={0} value={s.codeCollapseLines} onChange={e => set({ codeCollapseLines: +e.target.value })} /></label>
-        <label>{t.proxy}<input value={s.proxy} placeholder={t.proxyExample} onChange={e => set({ proxy: e.target.value })} /></label>
       </div>}
       {tab === 'shortcuts' && <div className="form">
         <label>{t.sendKey}<select value={s.sendKey} onChange={e => set({ sendKey: e.target.value as any })}><option value="Enter">{t.key_enter}</option><option value="Ctrl+Enter">{t.key_ctrlEnter}</option></select></label>
         <table className="sc"><tbody>
-          {([[t.sc_new, `${t.key_ctrl}+N`], [t.sc_search, `${t.key_ctrl}+K`], [t.sc_settings, `${t.key_ctrl}+,`], [t.sc_send, s.sendKey === 'Enter' ? t.key_enter : t.key_ctrlEnter], [t.sc_close, t.key_esc], [t.sc_devtools, t.key_f12]] as const).map(([a, b]) =>
+          {([[t.sc_global, s.globalShortcut || '-'], [t.sc_new, `${t.key_ctrl}+N`], [t.sc_search, `${t.key_ctrl}+K`], [t.sc_settings, `${t.key_ctrl}+,`], [t.sc_send, s.sendKey === 'Enter' ? t.key_enter : t.key_ctrlEnter], [t.sc_close, t.key_esc], [t.sc_devtools, t.key_f12]] as const).map(([a, b]) =>
             <tr key={a}><td>{a}</td><td><kbd>{b}</kbd></td></tr>)}
         </tbody></table>
       </div>}
+      {msg && <div className="settings-msg">{msg}</div>}
     </div>
   )
 }

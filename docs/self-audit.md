@@ -151,3 +151,22 @@
 | “网页/工具”开关 | 🟠 | 只有“工具”开关（控制 function calling）；**没有内置联网搜索** |
 | 对比度检查 | ✅ | 只检查令牌对；代码高亮主题（highlight.js github-dark）和 Mermaid 主题内部配色不在检查范围内 |
 | 图片附件缩略图 | ✅ | E2E 用 1×1 PNG 验证 |
+
+# P2 后状态（v0.4.0）
+
+## 测试结果（Linux 盒子上实际运行）
+- 单元测试（vitest）：131 / 131 通过（新增 `tests/p2.test.ts`、`tests/p2-providers.test.ts`：错误分类、重试退避、用量与费用、分支、备份/同步合并、WebDAV 密码加密、搜索）。
+- E2E（Playwright + 打包后的 linux-unpacked 应用）：44 / 44 通过（原 21 项 + 新增 `e2e/p2.spec.ts` 23 项）。
+
+## 各项状态
+| 项 | 状态 | 说明 |
+|---|---|---|
+| 11 对话级设置 | 已完成 | E2E 校验请求体中的 system / temperature / top_p / max_tokens 与上下文条数 |
+| 12 编辑重发/重新生成/分支/停止/删除/引用 | 已完成 | 分支为“同一位置多版本”+“分支到新对话” |
+| 13 网络与错误 | 部分完成 | 重试、超时、各错误码均有 E2E；代理（HTTP/SOCKS）仅沿用 P0 的 `session.setProxy`，本轮未做代理 E2E |
+| 14 用量与费用 | 已完成 | OpenAI 兼容用 `stream_options.include_usage`；Claude/Gemini 解析代码有单元覆盖但未连真实服务验证 |
+| 15 文件夹/标签/右键/搜索/批量删除 | 已完成 | |
+| 16 Ollama 检测 | 已完成 | 用模拟 `/api/tags` 验证，未连真实 Ollama |
+| 17 备份/导出/WebDAV | 已完成 | WebDAV 用本地 webdav-server 在 E2E 中验证两台“设备”同步与删除传播 |
+| 18 快捷键/托盘/开机启动/更新 | 部分完成 | 全局快捷键与托盘关窗驻留有 E2E；开机启动 Linux 不支持、Windows 未实测；更新检查只对模拟源验证（Linux 需 APPIMAGE 环境变量才启用），私有仓库下真实检查会失败，下载安装未验证 |
+| 19 首次引导 | 已完成 | 错误密钥与正确密钥的“测试连接”均有 E2E |

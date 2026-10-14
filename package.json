@@ -1,7 +1,7 @@
 {
   "name": "chatbox-clone",
   "productName": "ChatBox Clone",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "桌面 AI 聊天客户端",
   "author": "追逐 常",
   "main": "dist-electron/main.js",
@@ -59,6 +59,17 @@
         "repo": "chatbox-clone",
         "releaseType": "release"
       }
+    ],
+    "icon": "build/icon.png",
+    "extraResources": [
+      {
+        "from": "build/tray.png",
+        "to": "tray.png"
+      },
+      {
+        "from": "build/tray@2x.png",
+        "to": "tray@2x.png"
+      }
     ]
   },
   "devDependencies": {
@@ -73,6 +84,7 @@
     "dompurify": "^3.4.17",
     "electron": "^31.7.7",
     "electron-builder": "^25.1.8",
+    "electron-updater": "^6.8.9",
     "esbuild": "^0.28.2",
     "highlight.js": "^11.12.0",
     "katex": "^0.19.0",
@@ -90,7 +102,8 @@
     "typescript": "^5.9.3",
     "vite": "^5.4.21",
     "vitest": "^2.1.9",
-    "wait-on": "^9.5.1"
+    "wait-on": "^9.5.1",
+    "webdav-server": "^2.6.3"
   },
   "repository": {
     "type": "git",

@@ -133,7 +133,8 @@ test('export JSON and import it back', async () => {
   // markdown export of the current conversation
   const md = out.replace('.json', '.md')
   await app.evaluate(({ dialog }, p) => { (dialog as any).showSaveDialog = async () => ({ canceled: false, filePath: p }) }, md)
-  await page.getByRole('button', { name: zhCN.exportMd, exact: true }).click()
+  await page.getByRole('button', { name: zhCN.exportAs, exact: true }).click()
+  await page.getByRole('menuitem', { name: zhCN.exportMd }).click()
   await expect.poll(() => fs.existsSync(md) && fs.readFileSync(md, 'utf8')).toContain('## User')
   // delete conversation, then import
   page.once('dialog', d => d.accept())
@@ -286,7 +287,7 @@ test('message hover actions: timestamp, model, copy, read aloud', async () => {
   expect(await acts.evaluate(el => getComputedStyle(el).opacity)).toBe('0')
   await msg.hover()
   await expect.poll(() => acts.evaluate(el => getComputedStyle(el).opacity)).toBe('1')
-  await expect(acts.locator('.meta')).toContainText('mock-ok')
+  await expect(acts.locator('.meta').first()).toContainText('mock-ok')
   for (const n of [zhCN.copy, zhCN.regenerate, zhCN.readAloud, zhCN.delete]) await expect(acts.getByRole('button', { name: n, exact: true })).toBeVisible()
   const userActs = page.locator('.msg.user').last().locator('.msgacts')
   await page.locator('.msg.user').last().hover()

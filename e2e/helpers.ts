@@ -12,7 +12,7 @@ export function appPath(): string {
   return path.join(rel, 'linux-unpacked', 'chatbox-clone')
 }
 
-export interface Seed { mockUrl: string; language?: 'zh' | 'en' | 'system'; theme?: 'light' | 'dark'; conversations?: any[]; model?: string }
+export interface Seed { mockUrl: string; language?: 'zh' | 'en' | 'system'; theme?: 'light' | 'dark'; conversations?: any[]; model?: string; settings?: Record<string, any>; files?: Record<string, any> }
 
 export function seedUserData(seed: Seed): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chatbox-e2e-'))
@@ -25,17 +25,20 @@ export function seedUserData(seed: Seed): string {
       { id: 'down', name: 'Down', type: 'openai', apiKey: 'x', baseURL: 'http://127.0.0.1:9/v1', models: ['mock-ok'] },
     ],
     defaultProviderId: 'mock', defaultModel: seed.model || 'mock-ok', imageProviderId: 'mock', imageModel: 'dall-e-3',
+    retries: 0, retryBaseMs: 300, autoCheckUpdate: false, tray: false, globalShortcut: '',
+    ...(seed.settings || {}),
   }
   fs.writeFileSync(path.join(dir, 'data', 'settings.json'), JSON.stringify(settings))
+  for (const [k, v] of Object.entries(seed.files || {})) fs.writeFileSync(path.join(dir, 'data', k + '.json'), JSON.stringify(v))
   if (seed.conversations) fs.writeFileSync(path.join(dir, 'data', 'conversations.json'), JSON.stringify(seed.conversations))
   return dir
 }
 
-export async function launch(userData: string): Promise<{ app: ElectronApplication; page: Page; consoleErrors: string[] }> {
+export async function launch(userData: string, extraEnv: Record<string, string> = {}): Promise<{ app: ElectronApplication; page: Page; consoleErrors: string[] }> {
   const app = await electron.launch({
     executablePath: appPath(),
     args: process.platform === 'linux' ? ['--no-sandbox', ...(process.env.E2E_EXTRA_ARGS || '').split(' ').filter(Boolean)] : [],
-    env: { ...process.env, CHATBOX_USER_DATA: userData, ELECTRON_ENABLE_LOGGING: '1' },
+    env: { ...process.env, CHATBOX_USER_DATA: userData, ELECTRON_ENABLE_LOGGING: '1', ...extraEnv },
   })
   const page = await app.firstWindow()
   const consoleErrors: string[] = []

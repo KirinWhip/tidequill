@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain, dialog, session, shell, Menu, net, safeStorage, clipboard } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, session, shell, Menu, net, safeStorage, clipboard, Tray, globalShortcut, nativeImage } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import path from 'node:path'
 import fs from 'node:fs'
 import { ToolManager } from './tools'
@@ -8,13 +9,16 @@ import { mainStrings, type MainLang } from './i18n'
 
 if (process.env.CHATBOX_USER_DATA) app.setPath('userData', process.env.CHATBOX_USER_DATA)
 
-const ALLOWED_KEYS = new Set(['settings', 'conversations', 'personas', 'prompts', 'gallery', 'modelCache'])
+const ALLOWED_KEYS = new Set(['settings', 'conversations', 'personas', 'prompts', 'gallery', 'modelCache', 'folders', 'tombstones'])
 const dataDir = () => path.join(app.getPath('userData'), 'data')
 const fileFor = (k: string) => path.join(dataDir(), k + '.json')
 const allowFile = () => path.join(app.getPath('userData'), 'tool-allowlist.json')
 let tools: ToolManager
 let win: BrowserWindow | null = null
 let lang: MainLang = 'zh'
+let tray: Tray | null = null
+let quitting = false
+let currentShortcut = ''
 const inflight = new Map<string, AbortController>()
 
 const cipher: Cipher = {
@@ -44,6 +48,7 @@ function createWindow() {
   win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('file:') && !url.startsWith(process.env.VITE_DEV_SERVER_URL || '\0')) e.preventDefault() })
   if (process.env.VITE_DEV_SERVER_URL) win.loadURL(process.env.VITE_DEV_SERVER_URL)
   else win.loadFile(path.join(__dirname, '../dist/index.html'))
+  win.on('close', e => { if (tray && !quitting) { e.preventDefault(); win?.hide() } }) // keep running in tray
   win.webContents.on('before-input-event', (_e, input) => {
     if (input.type === 'keyDown' && input.key === 'F12') win?.webContents.toggleDevTools()
   })
@@ -116,10 +121,73 @@ app.whenReady().then(() => {
     }
     return tools.callTool(name, args)
   })
+  // ---- system integration ----
+  ipcMain.handle('system:apply', (_e, o: { globalShortcut: string; tray: boolean; launchAtLogin: boolean }) => applySystem(o))
+  ipcMain.handle('update:check', async () => {
+    try {
+      autoUpdater.autoDownload = false
+      if (process.env.CHATBOX_UPDATE_URL) autoUpdater.setFeedURL({ provider: 'generic', url: process.env.CHATBOX_UPDATE_URL })
+      const r = await autoUpdater.checkForUpdates()
+      if (!r) return { status: 'unsupported', current: app.getVersion() }
+      const latest = r.updateInfo.version
+      return { status: r.isUpdateAvailable ?? latest !== app.getVersion() ? 'available' : 'latest', latest, current: app.getVersion() }
+    } catch (e: any) { return { status: 'error', error: String(e?.message || e).slice(0, 300), current: app.getVersion() } }
+  })
+  ipcMain.handle('update:download', async () => { await autoUpdater.downloadUpdate(); return true })
+  ipcMain.handle('update:install', () => { quitting = true; autoUpdater.quitAndInstall() })
+  ipcMain.handle('pdf:export', async (_e, name: string) => {
+    const r = await dialog.showSaveDialog(win!, { defaultPath: name, filters: [{ name: 'PDF', extensions: ['pdf'] }] })
+    if (r.canceled || !r.filePath) return false
+    const pdf = await win!.webContents.printToPDF({ printBackground: true, pageSize: 'A4', margins: { marginType: 'default' } })
+    fs.writeFileSync(r.filePath, pdf); return true
+  })
+  ipcMain.handle('window:toggle', () => toggleWindow())
   ipcMain.handle('plugins:openDir', () => shell.openPath(path.join(app.getPath('userData'), 'plugins')))
 
   createWindow()
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 })
 
+function toggleWindow() {
+  if (!win) return
+  if (win.isVisible() && win.isFocused()) win.hide()
+  else { win.show(); win.focus() }
+}
+
+function resourcePath(f: string) {
+  return app.isPackaged ? path.join(process.resourcesPath, f) : path.join(__dirname, '..', 'build', f)
+}
+
+function applySystem(o: { globalShortcut: string; tray: boolean; launchAtLogin: boolean }) {
+  const res: { shortcut: boolean; tray: boolean; loginItem: boolean; loginSupported: boolean } = { shortcut: false, tray: false, loginItem: false, loginSupported: process.platform === 'win32' || process.platform === 'darwin' }
+  // global show/hide shortcut
+  if (currentShortcut) globalShortcut.unregister(currentShortcut)
+  currentShortcut = ''
+  if (o.globalShortcut) {
+    try { res.shortcut = globalShortcut.register(o.globalShortcut, toggleWindow); if (res.shortcut) currentShortcut = o.globalShortcut } catch { res.shortcut = false }
+  }
+  // tray
+  if (o.tray && !tray) {
+    const s = mainStrings[lang]
+    tray = new Tray(nativeImage.createFromPath(resourcePath('tray.png')))
+    tray.setToolTip('ChatBox Clone')
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: s.trayShow, click: toggleWindow },
+      { label: s.trayNew, click: () => { win?.show(); win?.webContents.send('app:command', 'newChat') } },
+      { type: 'separator' },
+      { label: s.trayQuit, click: () => { quitting = true; app.quit() } },
+    ]))
+    tray.on('click', toggleWindow)
+  } else if (!o.tray && tray) { tray.destroy(); tray = null }
+  res.tray = !!tray
+  // launch at login (Windows/macOS; not supported by Electron on Linux)
+  if (process.platform === 'win32' || process.platform === 'darwin') {
+    app.setLoginItemSettings({ openAtLogin: !!o.launchAtLogin })
+    res.loginItem = app.getLoginItemSettings().openAtLogin === !!o.launchAtLogin
+  }
+  return res
+}
+
+app.on('before-quit', () => { quitting = true })
+app.on('will-quit', () => globalShortcut.unregisterAll())
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })

@@ -1,4 +1,5 @@
-import type { Conversation, GalleryImage, Persona, PromptItem, Settings } from './types'
+import type { Conversation, Folder, GalleryImage, Persona, PromptItem, Settings } from './types'
+import { DEFAULT_PRICES } from './usage'
 
 export interface KV {
   get(key: string): Promise<any>
@@ -29,6 +30,9 @@ export function defaultSettings(): Settings {
     defaultProviderId: 'openai', defaultModel: 'gpt-4o-mini',
     imageProviderId: 'openai', imageModel: 'dall-e-3',
     mcpServers: [], toolsEnabled: true, codeLineNumbers: false, codeCollapseLines: 30,
+    topP: 1, retries: 2, retryBaseMs: 1000, showUsage: true, prices: DEFAULT_PRICES,
+    webdav: { url: '', username: '', password: '', enabled: false },
+    globalShortcut: 'CommandOrControl+Shift+Space', tray: true, launchAtLogin: false, autoCheckUpdate: true, onboarded: false,
   }
 }
 
@@ -74,6 +78,10 @@ export class Storage {
   savePrompts(p: PromptItem[]) { return this.kv.set('prompts', p) }
   async loadGallery(): Promise<GalleryImage[]> { return (await this.kv.get('gallery')) || [] }
   saveGallery(g: GalleryImage[]) { return this.kv.set('gallery', g) }
+  async loadFolders(): Promise<Folder[]> { return (await this.kv.get('folders')) || [] }
+  saveFolders(f: Folder[]) { return this.kv.set('folders', f) }
+  async loadTombstones(): Promise<Record<string, number>> { return (await this.kv.get('tombstones')) || {} }
+  saveTombstones(t: Record<string, number>) { return this.kv.set('tombstones', t) }
 }
 
 export function sortConversations(list: Conversation[]): Conversation[] {
@@ -83,7 +91,18 @@ export function sortConversations(list: Conversation[]): Conversation[] {
 export function searchConversations(list: Conversation[], q: string): Conversation[] {
   const s = q.trim().toLowerCase()
   if (!s) return list
-  return list.filter(c => c.title.toLowerCase().includes(s) || c.messages.some(m => m.content.toLowerCase().includes(s)))
+  return list.filter(c => c.title.toLowerCase().includes(s) || (c.tags || []).some(t => t.toLowerCase().includes(s)) || c.messages.some(m => m.content.toLowerCase().includes(s)))
+}
+
+/** first matching snippet in message content (for global search results) */
+export function searchSnippet(c: Conversation, q: string, radius = 24): string {
+  const s = q.trim().toLowerCase()
+  if (!s || c.title.toLowerCase().includes(s)) return ''
+  for (const m of c.messages) {
+    const i = m.content.toLowerCase().indexOf(s)
+    if (i >= 0) return (i > radius ? '…' : '') + m.content.slice(Math.max(0, i - radius), i + s.length + radius).replace(/\s+/g, ' ') + (i + s.length + radius < m.content.length ? '…' : '')
+  }
+  return ''
 }
 
 export interface MdLabels { model: string; attachment: string }

@@ -1,31 +1,48 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Attachment, Conversation, Message, Persona, PromptItem, Settings, GalleryImage } from '../shared/types'
-import { conversationToMarkdown, exportJSON, importJSON, importMarkdown, searchConversations, sortConversations, uid } from '../shared/storage'
-import { streamChat } from '../shared/providers'
-import { ProviderError } from '../shared/errors'
+import type { Attachment, Conversation, Folder, Message, Persona, PromptItem, Settings, GalleryImage } from '../shared/types'
+import { conversationToMarkdown, exportJSON, importJSON, importMarkdown, uid } from '../shared/storage'
+import { streamChat, listModels } from '../shared/providers'
+import { ProviderError, withRetry } from '../shared/errors'
+import { estimateMessages, estimateTokens } from '../shared/usage'
+import { branchAt, forkConversation, switchBranch } from '../shared/branches'
+import { makeBackup, parseBackup, restoreSettings, makeSyncPayload, mergeSync, BACKUP_KEYS } from '../shared/sync'
 import { api, storage, bridgeFetch, setRequestTimeout } from './api'
 import { dicts, resolveLang, I18n, type Dict } from './i18n'
 import { MdOptionsCtx } from './components/Markdown'
 import { ChatView } from './components/ChatView'
-import { MessageSquarePlus, Search, Settings as SettingsIcon, Users, BookOpen, Image as ImageIcon, Puzzle, FileInput, FileOutput, Pin, PinOff, Pencil, Trash2, X, MessageSquare } from 'lucide-react'
+import { Sidebar } from './components/Sidebar'
+import { Onboarding } from './components/Onboarding'
+import { ConvSettings } from './components/ConvSettings'
+import { webdavGet, webdavPut, webdavTest } from './webdav'
+import { MessageSquare, MessageSquarePlus, X, CheckCircle2 } from 'lucide-react'
 import { SettingsPanel, PersonasPanel, PromptsPanel, ImagesPanel, ToolsPanel } from './components/Panels'
 
 type Modal = null | 'settings' | 'personas' | 'prompts' | 'images' | 'tools'
+export interface AppActions {
+  backup(includeKeys: boolean): Promise<void>; restore(): Promise<void>; sync(): Promise<string>
+  detectOllama(): Promise<{ ok: boolean; count: number; url: string }>
+  checkUpdate(): Promise<any>; systemStatus: any
+}
 
 export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [convs, setConvs] = useState<Conversation[]>([])
+  const [folders, setFolders] = useState<Folder[]>([])
   const [curId, setCurId] = useState<string>('')
   const [personas, setPersonas] = useState<Persona[]>([])
   const [prompts, setPrompts] = useState<PromptItem[]>([])
   const [gallery, setGallery] = useState<GalleryImage[]>([])
-  const [query, setQuery] = useState('')
   const [modal, setModal] = useState<Modal>(null)
+  const [convSettingsId, setConvSettingsId] = useState('')
   const [busyId, setBusyId] = useState<string>('')
+  const [toast, setToast] = useState('')
+  const [update, setUpdate] = useState<any>(null)
+  const [systemStatus, setSystemStatus] = useState<any>({})
   const abortRef = useRef<AbortController | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const [sysDark, setSysDark] = useState(matchMedia('(prefers-color-scheme: dark)').matches)
   const [sysLocale, setSysLocale] = useState('zh-CN')
+  const tombstones = useRef<Record<string, number>>({})
 
   useEffect(() => {
     (async () => {
@@ -36,8 +53,10 @@ export default function App() {
       setSettings(s)
       const list = await storage.listConversations()
       setConvs(list); setCurId(list[0]?.id || '')
+      setFolders(await storage.loadFolders()); tombstones.current = await storage.loadTombstones()
       setPersonas(await storage.loadPersonas(d)); setPrompts(await storage.loadPrompts(d)); setGallery(await storage.loadGallery())
       api.setProxy(s.proxy); api.syncTools(s.mcpServers)
+      if (s.autoCheckUpdate) api.checkUpdate().then((r: any) => r?.status === 'available' && setUpdate(r))
     })()
     const mq = matchMedia('(prefers-color-scheme: dark)'); const f = () => setSysDark(mq.matches)
     mq.addEventListener('change', f); return () => mq.removeEventListener('change', f)
@@ -51,6 +70,12 @@ export default function App() {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light'
     if (settings) document.documentElement.style.fontSize = settings.fontSize + 'px'
   }, [dark, settings?.fontSize])
+  // system integration (global shortcut, tray, login item)
+  useEffect(() => {
+    if (!settings) return
+    api.applySystem({ globalShortcut: settings.globalShortcut, tray: settings.tray, launchAtLogin: settings.launchAtLogin }).then(setSystemStatus)
+  }, [settings?.globalShortcut, settings?.tray, settings?.launchAtLogin, !!settings, lang])
+  const showToast = (s: string) => { setToast(s); setTimeout(() => setToast(x => x === s ? '' : x), 3500) }
 
   const saveSettings = (s: Settings) => {
     const prev = settings
@@ -64,11 +89,19 @@ export default function App() {
   const updateConvs = useCallback((fn: (l: Conversation[]) => Conversation[]) => {
     setConvs(prev => {
       const next = fn(prev)
-      clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => storage.saveConversations(next), 400)
+      clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => storage.saveConversations(next.map(c => ({ ...c, messages: c.messages.map(({ status, ...m }) => m) }))), 400)
       return next
     })
   }, [])
-  const patchConv = useCallback((id: string, fn: (c: Conversation) => Conversation) => updateConvs(l => l.map(c => c.id === id ? fn(c) : c)), [updateConvs])
+  const patchConv = useCallback((id: string, fn: (c: Conversation) => Conversation) => updateConvs(l => l.map(c => c.id === id ? { ...fn(c), updatedAt: Date.now() } : c)), [updateConvs])
+  const saveFolders = (f: Folder[]) => { setFolders(f); storage.saveFolders(f) }
+  const deleteConvs = (ids: string[]) => {
+    const now = Date.now()
+    for (const id of ids) tombstones.current[id] = now
+    storage.saveTombstones(tombstones.current)
+    updateConvs(l => l.filter(x => !ids.includes(x.id)))
+    if (ids.includes(curId)) setCurId('')
+  }
 
   const newChat = useCallback((persona?: Persona) => {
     if (!settings) return
@@ -76,6 +109,7 @@ export default function App() {
     const c: Conversation = { id: uid(), title: persona?.name || t.untitled, messages: [], providerId: settings.defaultProviderId, model: settings.defaultModel, systemPrompt: persona?.prompt || '', pinned: false, createdAt: now, updatedAt: now }
     updateConvs(l => [c, ...l]); setCurId(c.id); setModal(null)
   }, [settings, t, updateConvs])
+  useEffect(() => { api.onCommand((cmd: string) => { if (cmd === 'newChat') newChat() }) }, [newChat])
 
   // shortcuts
   useEffect(() => {
@@ -84,40 +118,48 @@ export default function App() {
       if (mod && e.key.toLowerCase() === 'n') { e.preventDefault(); newChat() }
       if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); searchRef.current?.focus() }
       if (mod && e.key === ',') { e.preventDefault(); setModal('settings') }
-      if (e.key === 'Escape') setModal(null)
+      if (e.key === 'Escape') { setModal(null); setConvSettingsId('') }
     }
     window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h)
   }, [newChat])
 
   const cur = convs.find(c => c.id === curId)
   const convsRef = useRef(convs); convsRef.current = convs
-  const shown = useMemo(() => searchConversations(sortConversations(convs), query), [convs, query])
 
-  /** run the model on conversation `id` with given messages; handles tool-call loop */
+  /** run the model on conversation `id` with given history; handles retries, usage, reasoning and the tool-call loop */
   const runModel = async (id: string, history: Message[]) => {
     if (!settings) return
     const conv = convsRef.current.find(c => c.id === id) || cur!
     const provider = settings.providers.find(p => p.id === conv.providerId) || settings.providers[0]
+    const P = conv.params || {}
+    const temperature = P.temperature ?? settings.temperature, topP = P.topP ?? settings.topP
+    const maxTokens = P.maxTokens ?? settings.maxTokens, contextLength = P.contextLength ?? settings.contextLength
     const ctrl = new AbortController(); abortRef.current = ctrl; setBusyId(id)
     let msgs = [...history]
     const tools = settings.toolsEnabled ? await api.listTools() : []
+    const setMsg = (aid: string, patch: Partial<Message>) => patchConv(id, c => ({ ...c, messages: c.messages.map(m => m.id === aid ? { ...m, ...patch } : m) }))
     try {
       for (let round = 0; round < 8; round++) {
         const aid = uid()
         const asst: Message = { id: aid, role: 'assistant', content: '', model: conv.model, createdAt: Date.now() }
         msgs = [...msgs, asst]
         patchConv(id, c => ({ ...c, messages: msgs, updatedAt: Date.now() }))
-        let text = ''
-        let reasoning = ''
-        const ctx = msgs.slice(0, -1).slice(-Math.max(1, settings.contextLength))
-        // make sure context doesn't start with a dangling tool message
+        let text = '', reasoning = ''
+        const ctx = msgs.slice(0, -1).slice(-Math.max(1, contextLength))
         while (ctx.length && ctx[0].role === 'tool') ctx.shift()
-        const res = await streamChat(provider, conv.systemPrompt, ctx, {
-          model: conv.model, temperature: settings.temperature, maxTokens: settings.maxTokens, tools: tools.length ? tools : undefined, signal: ctrl.signal, fetchImpl: bridgeFetch, reasoning: !!conv.reasoning,
-          onReasoning: r => { reasoning += r; patchConv(id, c => ({ ...c, messages: c.messages.map(m => m.id === aid ? { ...m, reasoning } : m) })) },
-          onDelta: d => { text += d; patchConv(id, c => ({ ...c, messages: c.messages.map(m => m.id === aid ? { ...m, content: text } : m) })) },
-        })
-        const final: Message = { ...asst, content: res.text, reasoning: res.reasoning || reasoning || undefined, toolCalls: res.toolCalls.length ? res.toolCalls : undefined }
+        const res = await withRetry(() => {
+          text = ''; reasoning = ''
+          return streamChat(provider, conv.systemPrompt, ctx, {
+            model: conv.model, temperature, topP, maxTokens, tools: tools.length ? tools : undefined, signal: ctrl.signal, fetchImpl: bridgeFetch, reasoning: !!conv.reasoning,
+            onReasoning: r => { reasoning += r; setMsg(aid, { reasoning, status: undefined }) },
+            onDelta: d => { text += d; setMsg(aid, { content: text, status: undefined }) },
+          })
+        }, {
+          retries: settings.retries, baseMs: settings.retryBaseMs, signal: ctrl.signal,
+          onRetry: (n, delay) => setMsg(aid, { status: t.retrying.replace('{n}', String(n)).replace('{s}', (delay / 1000).toFixed(1)) }),
+        }, () => !text && !reasoning)
+        const usage = res.usage || { input: estimateMessages(ctx, conv.systemPrompt), output: estimateTokens(res.text + (res.reasoning || '')), estimated: true }
+        const final: Message = { ...asst, content: res.text, reasoning: res.reasoning || reasoning || undefined, usage, toolCalls: res.toolCalls.length ? res.toolCalls : undefined }
         msgs = [...msgs.slice(0, -1), final]
         patchConv(id, c => ({ ...c, messages: msgs }))
         if (!res.toolCalls.length || ctrl.signal.aborted) break
@@ -133,12 +175,11 @@ export default function App() {
         const last = msgs[msgs.length - 1]
         const pe = e instanceof ProviderError ? e : null
         const partial = (e as any)?.partial?.text
-        msgs = [...msgs.slice(0, -1), { ...last, content: partial || last.content, errorCode: pe?.code || 'unknown', error: pe ? (pe.status ? `HTTP ${pe.status} ` : '') + pe.detail : String(e?.message || e) }]
+        msgs = [...msgs.slice(0, -1), { ...last, status: undefined, content: partial || last.content, errorCode: pe?.code || 'unknown', error: pe ? (pe.status ? `HTTP ${pe.status} ` : '') + pe.detail : String(e?.message || e) }]
         patchConv(id, c => ({ ...c, messages: msgs }))
       }
     } finally {
       setBusyId(''); abortRef.current = null
-      // auto title
       const c0 = convsRef.current.find(c => c.id === id)
       if (c0 && (c0.title === t.untitled || c0.title === dicts.zh.untitled || c0.title === dicts.en.untitled)) {
         const firstUser = msgs.find(m => m.role === 'user')
@@ -147,24 +188,41 @@ export default function App() {
     }
   }
 
-  const send = async (content: string, images: string[], attachments: Attachment[]) => {
+  const send = async (content: string, images: string[], attachments: Attachment[], quote?: string) => {
     if (!cur || busyId) return
-    const m: Message = { id: uid(), role: 'user', content, images: images.length ? images : undefined, attachments: attachments.length ? attachments : undefined, createdAt: Date.now() }
+    const m: Message = { id: uid(), role: 'user', content, quote, images: images.length ? images : undefined, attachments: attachments.length ? attachments : undefined, createdAt: Date.now() }
     await runModel(cur.id, [...cur.messages, m])
   }
+  /** regenerate: keep the old reply as a branch at that position */
   const regenerate = (msgId: string) => {
     if (!cur || busyId) return
     const idx = cur.messages.findIndex(m => m.id === msgId)
     let u = idx; while (u >= 0 && cur.messages[u].role !== 'user') u--
     if (u < 0) return
-    runModel(cur.id, cur.messages.slice(0, u + 1))
+    const next = branchAt(cur, u + 1, [])
+    patchConv(cur.id, () => next)
+    convsRef.current = convsRef.current.map(c => c.id === cur.id ? next : c)
+    runModel(cur.id, next.messages)
   }
+  /** edit & resend: the edited message starts a new branch */
   const editResend = (msgId: string, content: string) => {
     if (!cur || busyId) return
     const idx = cur.messages.findIndex(m => m.id === msgId)
-    runModel(cur.id, [...cur.messages.slice(0, idx), { ...cur.messages[idx], content }])
+    const edited: Message = { ...cur.messages[idx], id: uid(), content, createdAt: Date.now() }
+    const next = branchAt(cur, idx, [edited])
+    patchConv(cur.id, () => next)
+    convsRef.current = convsRef.current.map(c => c.id === cur.id ? next : c)
+    runModel(cur.id, next.messages)
   }
-  const deleteMsg = (msgId: string) => cur && patchConv(cur.id, c => ({ ...c, messages: c.messages.filter(m => m.id !== msgId) }))
+  const deleteMsg = (msgId: string) => cur && patchConv(cur.id, c => {
+    const i = c.messages.findIndex(m => m.id === msgId)
+    return { ...c, messages: c.messages.filter(m => m.id !== msgId), branches: Object.fromEntries(Object.entries(c.branches || {}).filter(([k]) => +k < i)) }
+  })
+  const fork = (msgId: string) => {
+    if (!cur) return
+    const f = forkConversation(cur, msgId, uid(), `${cur.title} (${t.branchOf})`)
+    updateConvs(l => [f, ...l]); setCurId(f.id)
+  }
 
   const doImport = async () => {
     const f = await api.openFile(['json', 'md'])
@@ -175,65 +233,90 @@ export default function App() {
     } catch { alert(t.err_invalid_file) }
   }
 
+  const actions: AppActions = {
+    systemStatus,
+    async backup(includeKeys) {
+      const data: Record<string, any> = {}
+      for (const k of BACKUP_KEYS) data[k] = await api.kvGet(k)
+      data.conversations = convsRef.current
+      if (await api.saveFile(`chatbox-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(makeBackup(data, includeKeys)))) showToast(t.backupDone)
+    },
+    async restore() {
+      const f = await api.openFile(['json'])
+      if (!f) return
+      let b
+      try { b = parseBackup(f.content) } catch { alert(t.err_invalid_file); return }
+      if (!confirm(t.confirmRestore)) return
+      clearTimeout(saveTimer.current) // drop pending debounced writes so they cannot overwrite restored data
+      for (const k of BACKUP_KEYS) {
+        if (b.data[k] === undefined) continue
+        await api.kvSet(k, k === 'settings' ? restoreSettings(settings, b.data[k]) : b.data[k])
+      }
+      showToast(t.restoreDone)
+      setTimeout(() => location.reload(), 600)
+    },
+    async sync() {
+      const cfg = settings!.webdav
+      const local = { conversations: convsRef.current, tombstones: tombstones.current, folders, personas, prompts }
+      await webdavTest(cfg)
+      const remote = await webdavGet(cfg)
+      const merged = mergeSync(local, remote)
+      await webdavPut(cfg, makeSyncPayload(merged))
+      tombstones.current = merged.tombstones; storage.saveTombstones(merged.tombstones)
+      updateConvs(() => merged.conversations); saveFolders(merged.folders)
+      setPersonas(merged.personas); storage.savePersonas(merged.personas); setPrompts(merged.prompts); storage.savePrompts(merged.prompts)
+      saveSettings({ ...settings!, webdav: { ...cfg, lastSync: Date.now() } })
+      return `${merged.conversations.length}`
+    },
+    async detectOllama() {
+      const p = settings!.providers.find(x => x.type === 'ollama')
+      const url = p?.baseURL || 'http://localhost:11434'
+      try {
+        const models = await listModels(p || { id: 'ollama', name: 'Ollama', type: 'ollama', apiKey: '', baseURL: url, models: [] }, bridgeFetch)
+        if (p) saveSettings({ ...settings!, providers: settings!.providers.map(x => x.id === p.id ? { ...x, models } : x) })
+        return { ok: true, count: models.length, url }
+      } catch { return { ok: false, count: 0, url } }
+    },
+    async checkUpdate() { const r = await api.checkUpdate(); if (r?.status === 'available') setUpdate(r); return r },
+  }
+
   if (!settings) return null
-  const navItems: [Modal | 'import' | 'export', any, string][] = [
-    ['personas', Users, t.personas], ['prompts', BookOpen, t.prompts], ['images', ImageIcon, t.images], ['tools', Puzzle, t.tools],
-    ['import', FileInput, t.importData], ['export', FileOutput, t.exportJson], ['settings', SettingsIcon, t.settings],
-  ]
+  const needsOnboarding = !settings.onboarded && !settings.providers.some(p => p.apiKey)
+  const convForSettings = convs.find(c => c.id === convSettingsId)
   return (
     <I18n.Provider value={t}>
     <MdOptionsCtx.Provider value={{ lineNumbers: settings.codeLineNumbers, collapseLines: settings.codeCollapseLines }}>
     <div className="app">
-      <aside className="sidebar">
-        <div className="brand"><MessageSquare size={20} className="brand-icon" />{t.brand}</div>
-        <button className="btn primary block" onClick={() => newChat()}><MessageSquarePlus size={16} />{t.newChat}</button>
-        <div className="searchbox"><Search size={14} /><input ref={searchRef} placeholder={t.search} aria-label={t.search} value={query} onChange={e => setQuery(e.target.value)} /></div>
-        <div className="convlist">
-          {shown.map(c => <ConvItem key={c.id} c={c} active={c.id === curId} t={t} onClick={() => setCurId(c.id)}
-            onRename={title => patchConv(c.id, x => ({ ...x, title }))}
-            onPin={() => patchConv(c.id, x => ({ ...x, pinned: !x.pinned }))}
-            onDelete={() => { if (confirm(t.confirmDelete)) { updateConvs(l => l.filter(x => x.id !== c.id)); if (curId === c.id) setCurId('') } }} />)}
-        </div>
-        <nav className="sidenav">
-          {navItems.map(([k, Icon, label]) => <button key={k} onClick={() => k === 'import' ? doImport() : k === 'export' ? api.saveFile('chatbox-export.json', exportJSON(convs)) : setModal(k as Modal)}>
-            <Icon size={16} />{label}
-          </button>)}
-        </nav>
-      </aside>
+      <Sidebar convs={convs} folders={folders} curId={curId} searchRef={searchRef} busyId={busyId}
+        onSelect={setCurId} onNew={() => newChat()} onPatch={patchConv} onDelete={deleteConvs} onFolders={saveFolders}
+        onOpenSettings={id => setConvSettingsId(id)} onModal={m => setModal(m as Modal)} onImport={doImport}
+        onExportAll={() => api.saveFile('chatbox-export.json', exportJSON(convs))}
+        onExportMd={c => api.saveFile(`${c.title}.md`, conversationToMarkdown(c, { model: t.exportedModel, attachment: t.attachment }))}
+        update={update} onUpdate={() => api.downloadUpdate().then(() => api.installUpdate())} />
       <main className="main">
-        {cur ? <ChatView key={cur.id} conv={cur} settings={settings} dark={dark} busy={busyId === cur.id} prompts={prompts}
+        {cur ? <ChatView key={cur.id} conv={cur} convs={convs} settings={settings} dark={dark} busy={busyId === cur.id} prompts={prompts}
           onSend={send} onStop={() => abortRef.current?.abort()} onRegenerate={regenerate} onEditResend={editResend} onDeleteMsg={deleteMsg}
-          onPatch={fn => patchConv(cur.id, fn)} onSettings={saveSettings} onExport={() => api.saveFile(`${cur.title}.md`, conversationToMarkdown(cur, { model: t.exportedModel, attachment: t.attachment }))} />
+          onFork={fork} onSwitchBranch={(pos, idx) => patchConv(cur.id, c => switchBranch(c, pos, idx))} onOpenConv={setCurId}
+          onPatch={fn => patchConv(cur.id, fn)} onSettings={saveSettings} onConvSettings={() => setConvSettingsId(cur.id)}
+          onExport={kind => kind === 'md' ? api.saveFile(`${cur.title}.md`, conversationToMarkdown(cur, { model: t.exportedModel, attachment: t.attachment }))
+            : kind === 'json' ? api.saveFile(`${cur.title}.json`, exportJSON([cur])) : api.exportPdf(`${cur.title}.pdf`)} />
           : <div className="empty"><div><MessageSquare size={40} /><p>{t.empty}</p><button className="btn primary" onClick={() => newChat()}><MessageSquarePlus size={16} />{t.newChat}</button></div></div>}
       </main>
       {modal && <div className="overlay" onClick={() => setModal(null)}>
         <div className="modal" onClick={e => e.stopPropagation()}>
           <button className="icon-btn close" title={t.close} aria-label={t.close} onClick={() => setModal(null)}><X size={18} /></button>
-          {modal === 'settings' && <SettingsPanel s={settings} t={t} onChange={saveSettings} />}
+          {modal === 'settings' && <SettingsPanel s={settings} t={t} onChange={saveSettings} actions={actions} />}
           {modal === 'personas' && <PersonasPanel list={personas} t={t} onChange={l => { setPersonas(l); storage.savePersonas(l) }} onUse={p => newChat(p)} />}
           {modal === 'prompts' && <PromptsPanel list={prompts} t={t} onChange={l => { setPrompts(l); storage.savePrompts(l) }} />}
           {modal === 'images' && <ImagesPanel s={settings} t={t} gallery={gallery} onChange={g => { setGallery(g); storage.saveGallery(g) }} />}
           {modal === 'tools' && <ToolsPanel s={settings} t={t} onChange={saveSettings} />}
         </div>
       </div>}
+      {convForSettings && <ConvSettings conv={convForSettings} settings={settings} folders={folders} onPatch={fn => patchConv(convForSettings.id, fn)} onClose={() => setConvSettingsId('')} />}
+      {needsOnboarding && <Onboarding settings={settings} onDone={s => saveSettings({ ...s, onboarded: true })} />}
+      {toast && <div className="toast" role="status"><CheckCircle2 size={14} />{toast}</div>}
     </div>
     </MdOptionsCtx.Provider>
     </I18n.Provider>
-  )
-}
-
-function ConvItem({ c, active, t, onClick, onRename, onPin, onDelete }: { c: Conversation; active: boolean; t: Dict; onClick(): void; onRename(s: string): void; onPin(): void; onDelete(): void }) {
-  const [editing, setEditing] = useState(false); const [v, setV] = useState(c.title)
-  return (
-    <div className={'conv' + (active ? ' active' : '')} onClick={onClick}>
-      {c.pinned ? <Pin size={13} className="pinmark" /> : <MessageSquare size={13} className="convicon" />}
-      {editing ? <input autoFocus value={v} aria-label={t.rename} onChange={e => setV(e.target.value)} onBlur={() => { onRename(v); setEditing(false) }} onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
-        : <span className="title">{c.title}</span>}
-      <span className="acts">
-        <button className="icon-btn sm" title={t.rename} aria-label={t.rename} onClick={e => { e.stopPropagation(); setV(c.title); setEditing(true) }}><Pencil size={13} /></button>
-        <button className="icon-btn sm" title={c.pinned ? t.unpin : t.pin} aria-label={c.pinned ? t.unpin : t.pin} onClick={e => { e.stopPropagation(); onPin() }}>{c.pinned ? <PinOff size={13} /> : <Pin size={13} />}</button>
-        <button className="icon-btn sm" title={t.delete} aria-label={t.delete} onClick={e => { e.stopPropagation(); onDelete() }}><Trash2 size={13} /></button>
-      </span>
-    </div>
   )
 }

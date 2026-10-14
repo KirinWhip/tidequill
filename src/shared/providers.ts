@@ -1,9 +1,10 @@
 import type { Message, ProviderConfig, ToolCall, ToolDef } from './types'
-import { ProviderError, codeForStatus, errorDetail, toProviderError } from './errors'
+import { ProviderError, classifyError, errorDetail, toProviderError } from './errors'
 
 export interface ChatOptions {
   model: string
   temperature: number
+  topP?: number
   maxTokens: number
   tools?: ToolDef[]
   signal?: AbortSignal
@@ -14,8 +15,10 @@ export interface ChatOptions {
   fetchImpl?: typeof fetch
 }
 
+export interface Usage { input: number; output: number; estimated?: boolean }
 export interface ChatResult {
   text: string
+  usage?: Usage
   reasoning?: string
   toolCalls: ToolCall[]
 }
@@ -38,7 +41,7 @@ export function defaultBaseURL(type: ProviderConfig['type']): string {
 }
 
 function userText(m: Message): string {
-  let t = m.content
+  let t = m.quote ? m.quote.split('\n').map(l => '> ' + l).join('\n') + '\n\n' + m.content : m.content
   if (m.attachments?.length) {
     t += '\n\n' + m.attachments.map(a => `<file name="${a.name}">\n${a.text}\n</file>`).join('\n')
   }
@@ -73,6 +76,8 @@ export function buildOpenAIRequest(p: ProviderConfig, system: string, msgs: Mess
   const base = p.type === 'ollama' ? trim(p.baseURL || defaultBaseURL('ollama')) + '/v1' : trim(p.baseURL || defaultBaseURL('openai'))
   const body: any = { model: o.model, messages: toOpenAIMessages(system, msgs), stream: true, temperature: o.temperature }
   if (o.maxTokens) body.max_tokens = o.maxTokens
+  if (o.topP != null && o.topP < 1) body.top_p = o.topP
+  if (p.type === 'openai') body.stream_options = { include_usage: true }
   // reasoning models (o-series, gpt-5, grok-3-mini, qwen3...) accept reasoning_effort; DeepSeek-reasoner reasons by model choice
   if (o.reasoning && p.type !== 'ollama' && !/deepseek/i.test(o.model)) body.reasoning_effort = 'high'
   if (o.reasoning && p.type === 'ollama') body.think = true
@@ -109,6 +114,7 @@ export function toAnthropicMessages(msgs: Message[]): any[] {
 
 export function buildAnthropicRequest(p: ProviderConfig, system: string, msgs: Message[], o: ChatOptions): HttpRequest {
   const body: any = { model: o.model, messages: toAnthropicMessages(msgs), stream: true, temperature: Math.min(o.temperature, 1), max_tokens: o.maxTokens || 4096 }
+  if (o.topP != null && o.topP < 1) body.top_p = o.topP
   if (system) body.system = system
   if (o.reasoning) {
     // extended thinking: temperature must be omitted and max_tokens > budget
@@ -149,7 +155,7 @@ export function toGeminiContents(msgs: Message[]): any[] {
 }
 
 export function buildGeminiRequest(p: ProviderConfig, system: string, msgs: Message[], o: ChatOptions): HttpRequest {
-  const body: any = { contents: toGeminiContents(msgs), generationConfig: { temperature: o.temperature, maxOutputTokens: o.maxTokens || undefined } }
+  const body: any = { contents: toGeminiContents(msgs), generationConfig: { temperature: o.temperature, maxOutputTokens: o.maxTokens || undefined, ...(o.topP != null && o.topP < 1 ? { topP: o.topP } : {}) } }
   if (system) body.systemInstruction = { parts: [{ text: system }] }
   if (o.reasoning) body.generationConfig.thinkingConfig = { includeThoughts: true }
   if (o.tools?.length) body.tools = [{ functionDeclarations: o.tools.map(t => ({ name: t.name, description: t.description, parameters: t.parameters })) }]
@@ -191,6 +197,7 @@ export function createAccumulator(type: ProviderConfig['type']) {
   let text = ''
   let reasoning = ''
   let rDelta = ''
+  let usage: Usage | undefined
   const calls = new Map<number | string, { id: string; name: string; argsText: string; args?: any }>()
   let n = 0
   return {
@@ -208,14 +215,17 @@ export function createAccumulator(type: ProviderConfig['type']) {
           if (j.delta?.type === 'thinking_delta') rDelta = j.delta.thinking || ''
           if (j.delta?.type === 'input_json_delta') { const c = calls.get(j.index); if (c) c.argsText += j.delta.partial_json }
         }
-        if (j.type === 'error') throw new Error(j.error?.message || 'Anthropic error')
+        if (j.type === 'message_start' && j.message?.usage) usage = { input: j.message.usage.input_tokens || 0, output: j.message.usage.output_tokens || 0 }
+        if (j.type === 'message_delta' && j.usage) usage = { input: usage?.input || j.usage.input_tokens || 0, output: j.usage.output_tokens || 0 }
+        if (j.type === 'error') throw new ProviderError(classifyError(0, JSON.stringify(j)), j.error?.message || 'Anthropic error')
       } else if (type === 'gemini') {
         for (const part of j.candidates?.[0]?.content?.parts || []) {
           if (part.text && part.thought) rDelta += part.text
           else if (part.text) delta += part.text
           if (part.functionCall) calls.set(n++, { id: `${part.functionCall.name}::${n}`, name: part.functionCall.name, argsText: '', args: part.functionCall.args || {} })
         }
-        if (j.error) throw new Error(j.error.message)
+        if (j.usageMetadata) usage = { input: j.usageMetadata.promptTokenCount || 0, output: (j.usageMetadata.candidatesTokenCount || 0) + (j.usageMetadata.thoughtsTokenCount || 0) }
+        if (j.error) throw new ProviderError(classifyError(j.error.code || 0, JSON.stringify(j)), j.error.message)
       } else {
         const d = j.choices?.[0]?.delta
         if (d?.content) delta = d.content
@@ -229,7 +239,8 @@ export function createAccumulator(type: ProviderConfig['type']) {
           if (tc.function?.arguments) c.argsText += tc.function.arguments
           calls.set(k, c)
         }
-        if (j.error) throw new Error(j.error.message || 'API error')
+        if (j.usage) usage = { input: j.usage.prompt_tokens || 0, output: j.usage.completion_tokens || 0 }
+        if (j.error) throw new ProviderError(classifyError(0, JSON.stringify(j)), j.error.message || 'API error')
       }
       text += delta
       reasoning += rDelta
@@ -243,7 +254,10 @@ export function createAccumulator(type: ProviderConfig['type']) {
         if (!args) { try { args = c.argsText ? JSON.parse(c.argsText) : {} } catch { args = {} } }
         return { id: c.id, name: c.name, args }
       })
-      return reasoning ? { text, reasoning, toolCalls } : { text, toolCalls }
+      const r: ChatResult = { text, toolCalls }
+      if (reasoning) r.reasoning = reasoning
+      if (usage) r.usage = usage
+      return r
     },
   }
 }
@@ -260,7 +274,7 @@ export async function streamChat(p: ProviderConfig, system: string, msgs: Messag
   }
   if (!res.ok || !res.body) {
     const t = await res.text().catch(() => '')
-    throw new ProviderError(codeForStatus(res.status), errorDetail(t), res.status)
+    throw new ProviderError(classifyError(res.status, t), errorDetail(t), res.status)
   }
   const acc = createAccumulator(p.type)
   try {
@@ -283,7 +297,7 @@ async function getJSON(f: typeof fetch, url: string, init?: RequestInit) {
   let r: Response
   try { r = await f(url, init) } catch (e) { throw toProviderError(e, 'connect') }
   const t = await r.text()
-  if (!r.ok) throw new ProviderError(codeForStatus(r.status), errorDetail(t), r.status)
+  if (!r.ok) throw new ProviderError(classifyError(r.status, t), errorDetail(t), r.status)
   try { return JSON.parse(t) } catch { throw new ProviderError('http', t.slice(0, 200)) }
 }
 
