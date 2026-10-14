@@ -33,7 +33,8 @@ test('claude-sonnet-5-5: the first message succeeds (no sampling params; thinkin
   expect(b.temperature).toBeUndefined(); expect(b.top_p).toBeUndefined(); expect(b.thinking).toEqual({ type: 'between_tools' })
   expect(mock.anthropic.at(-1).headers['x-api-key']).toBe('sk-ant-e2e-secret')
   // deep thinking on: adaptive + summarized, thinking text shown
-  await page.getByRole('button', { name: zhCN.reasoning, exact: true }).click()
+  const rt = page.getByTestId('reasoning-toggle')
+  await expect(async () => { if (await rt.getAttribute('aria-pressed') !== 'true') await rt.click(); await expect(rt).toHaveAttribute('aria-pressed', 'true', { timeout: 1000 }) }).toPass({ timeout: 10_000 })
   await send(page, '再来一次')
   await expect(page.locator('.msg.assistant').last()).toContainText('一切正常')
   expect(mock.anthropic.at(-1).body.thinking).toEqual({ type: 'adaptive', display: 'summarized' })
