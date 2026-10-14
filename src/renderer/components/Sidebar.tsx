@@ -8,7 +8,7 @@ import { searchConversations, searchSnippet, sortConversations, uid } from '../.
 import { useT } from '../i18n'
 
 interface Props {
-  convs: Conversation[]; folders: Folder[]; curId: string; busyId: string; searchRef: RefObject<HTMLInputElement>
+  convs: Conversation[]; folders: Folder[]; curId: string; busyId: string; searchRef: RefObject<HTMLInputElement | null>
   onSelect(id: string): void; onNew(): void; onPatch(id: string, fn: (c: Conversation) => Conversation): void; onDelete(ids: string[]): void
   onFolders(f: Folder[]): void; onOpenSettings(id: string): void; onModal(m: string): void; onExportMd(c: Conversation): void
   update: any; onUpdate(): void

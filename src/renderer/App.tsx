@@ -97,7 +97,7 @@ export default function App() {
   }
 
   // persist conversations (debounced)
-  const saveTimer = useRef<any>()
+  const saveTimer = useRef<any>(undefined)
   const updateConvs = useCallback((fn: (l: Conversation[]) => Conversation[]) => {
     setConvs(prev => {
       const next = fn(prev)
