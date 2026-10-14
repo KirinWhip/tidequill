@@ -64,6 +64,8 @@ export interface Message {
 export interface Conversation {
   id: string
   title: string
+  /** B9: where the title came from; 'fallback' = first sentence placeholder, replaced by the auto title */
+  titleSource?: 'fallback' | 'auto' | 'manual'
   messages: Message[]
   providerId: string
   model: string
@@ -138,6 +140,8 @@ export interface Settings {
   toolsEnabled: boolean
   /** initial toggle state of new conversations (Settings > Chat); all off by default */
   chatDefaults?: import('./chatflags').ChatDefaults
+  /** B12: append "current model is …" to the system prompt (default off) */
+  tellModel?: boolean
   builtinTools: boolean // send builtin demo tools (time / calculator); off by default to save tokens
   autoTitle: boolean // summarize a short title after the first reply
   webSearch?: import('./websearch').WebSearchConfig

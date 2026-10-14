@@ -83,6 +83,27 @@ export function findContextWindow(model: string, list: ContextWindow[]): number 
 }
 
 /** tokens the next request will roughly carry: system prompt + the last `contextLength` messages + the draft */
+/** Round 3 · B10: what the next request is estimated to carry (system prompt / tool definitions / history / input box),
+ *  calibrated with the last provider-reported input tokens when the local estimate deviates by more than 15 % */
+export function contextBreakdown(msgs: Message[], system: string, contextLength: number, draft: string, window: number | undefined, toolsTokens = 0) {
+  const n = Math.max(1, contextLength)
+  const parts = { system: estimateTokens(system), tools: toolsTokens, history: estimateMessages(msgs.slice(-n), ''), input: draft ? 4 + estimateTokens(draft) : 0 }
+  const raw = parts.system + parts.tools + parts.history + parts.input
+  let calib: { real: number; est: number; factor: number } | undefined
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i]
+    if (m.role !== 'assistant' || !m.usage || m.usage.estimated || !(m.usage.input > 0)) continue
+    const before = msgs.slice(0, i).filter(x => !(x.role === 'assistant' && x.error && !x.content)).slice(-n)
+    const est = parts.system + parts.tools + estimateMessages(before, '')
+    if (est > 0) calib = { real: m.usage.input, est, factor: m.usage.input / est }
+    break
+  }
+  const factor = calib && Math.abs(calib.factor - 1) > 0.15 ? Math.min(3, Math.max(0.5, calib.factor)) : 1
+  const used = Math.round(raw * factor)
+  const ratio = window ? used / window : 0
+  return { used, raw, window, ratio, parts, calib, factor, level: !window ? 'unknown' as const : ratio >= 1 ? 'over' as const : ratio >= 0.8 ? 'near' as const : 'ok' as const }
+}
+
 export function contextUsage(msgs: Message[], system: string, contextLength: number, draft: string, window: number | undefined) {
   const ctx = msgs.slice(-Math.max(1, contextLength))
   const used = estimateMessages(ctx, system) + (draft ? 4 + estimateTokens(draft) : 0)

@@ -10,10 +10,10 @@ import { transcribe } from '../../shared/stt'
 import { api, bridgeFetch } from '../api'
 import { ocrImage } from '../ocr'
 import { branchInfo } from '../../shared/branches'
-import { contextUsage, conversationUsage, costOf, DEFAULT_CONTEXT_WINDOWS, findContextWindow, findPrice, formatCost } from '../../shared/usage'
+import { contextBreakdown, estimateTokens, conversationUsage, costOf, DEFAULT_CONTEXT_WINDOWS, findContextWindow, findPrice, formatCost } from '../../shared/usage'
 import type { Attachment, Conversation, Message, PromptItem, Settings } from '../../shared/types'
 import { useT } from '../i18n'
-import { convFlags } from '../../shared/chatflags'
+import { convFlags, systemPromptFor } from '../../shared/chatflags'
 import { Markdown, useCopy } from './Markdown'
 import { ModelSelector } from './ModelSelector'
 import { extractText, readAsDataURL, kindOf, UNSUPPORTED } from '../files'
@@ -69,12 +69,12 @@ export function ChatView({ conv, convs, settings, dark, busy, searching, onChoos
         <ModelSelector providers={settings.providers} providerId={conv.providerId} model={conv.model} onChange={(providerId, model) => onPatch(c => ({ ...c, providerId, model }))} />
         <button className={'toggle tip-below' + (flags.reasoning ? ' on' : '')} data-testid="reasoning-toggle" aria-pressed={flags.reasoning} data-tip={`${t.reasoning} · ${flags.reasoning ? t.onState : t.offState} (${t.key_ctrl}+D)\n${t.reasoningTip3}`} aria-label={t.reasoning}
           aria-description={t.reasoningTip3} onClick={() => onPatch(c => ({ ...c, reasoning: !flags.reasoning }))}><Brain size={15} /><span>{t.reasoning}</span></button>
-        <button className={'icon-btn' + (showSys ? ' active' : '')} title={`${t.systemPrompt} (${t.key_ctrl}+Shift+P)`} aria-label={t.systemPrompt} onClick={() => setShowSys(!showSys)}><ScrollText size={17} /></button>
-        <button className={'icon-btn' + (findOpen ? ' active' : '')} data-testid="find-btn" title={`${t.find} (${t.key_ctrl}+F)`} aria-label={t.find} onClick={() => setFindOpen(!findOpen)}><Search size={17} /></button>
-        <button className={'icon-btn' + (compareOpen || conv.compareModels?.length ? ' active' : '')} data-testid="compare-btn" title={`${t.compare}\n${t.compareTip}`} aria-label={t.compare} onClick={() => setCompareOpen(!compareOpen)}><Columns2 size={17} /></button>
-        <button className="icon-btn" title={`${t.convSettings} (${t.key_ctrl}+Shift+S)`} aria-label={t.convSettings} onClick={onConvSettings}><Settings2 size={17} /></button>
+        <button className={'icon-btn' + (showSys ? ' active' : '')} data-testid="sys-btn" data-tip={`${t.systemPrompt} (${t.key_ctrl}+Shift+P)\n${t.sysPromptTip}`} aria-label={t.systemPrompt} onClick={() => setShowSys(!showSys)}><ScrollText size={17} /></button>
+        <button className={'icon-btn' + (findOpen ? ' active' : '')} data-testid="find-btn" data-tip={`${t.find} (${t.key_ctrl}+F)\n${t.findTip}`} aria-label={t.find} onClick={() => setFindOpen(!findOpen)}><Search size={17} /></button>
+        <button className={'icon-btn' + (compareOpen || conv.compareModels?.length ? ' active' : '')} data-testid="compare-btn" data-tip={`${t.compare}\n${t.compareTip2}`} aria-label={t.compare} onClick={() => setCompareOpen(!compareOpen)}><Columns2 size={17} /></button>
+        <button className="icon-btn" data-testid="convsettings-btn" data-tip={`${t.convSettings} (${t.key_ctrl}+Shift+S)\n${t.convSettingsTip}`} aria-label={t.convSettings} onClick={onConvSettings}><Settings2 size={17} /></button>
         <span className="exportwrap">
-          <button className={'icon-btn' + (exportOpen ? ' active' : '')} title={`${t.exportAs} (${t.key_ctrl}+E)`} aria-label={t.exportAs} onClick={() => setExportOpen(!exportOpen)}><FileDown size={17} /></button>
+          <button className={'icon-btn tip-right' + (exportOpen ? ' active' : '')} data-testid="export-btn" data-tip={`${t.exportAs} (${t.key_ctrl}+E)\n${t.exportTip}`} aria-label={t.exportAs} onClick={() => setExportOpen(!exportOpen)}><FileDown size={17} /></button>
           {exportOpen && <div className="ctxmenu dropdown" role="menu">
             <button role="menuitem" onClick={() => onExport('md')}><FileText size={14} />{t.exportMd}</button>
             <button role="menuitem" onClick={() => onExport('json')}><FileJson size={14} />{t.exportJsonConv}</button>
@@ -281,14 +281,26 @@ function Composer({ conv, settings, busy, prompts, quote, onClearQuote, onSend, 
   const setP = (p: Partial<NonNullable<Conversation['params']>>) => onPatch(c => ({ ...c, params: { ...(c.params || {}), ...p } }))
 
   const ctxLen = P.contextLength ?? settings.contextLength
-  const cu = contextUsage(conv.messages.filter(m => !m.compareGroup || m.compareChosen), conv.systemPrompt, ctxLen, [quote, input, ...atts.map(a => a.text)].join('\n'), findContextWindow(conv.model, settings.contextWindows || DEFAULT_CONTEXT_WINDOWS))
+  // B10: tool definitions count too (only when tools are on for this conversation)
+  const [toolsTok, setToolsTok] = useState(0)
+  useEffect(() => {
+    let live = true
+    if (!flags.tools) { setToolsTok(0); return }
+    Promise.resolve(api.listTools?.()).then((l: any[] | undefined) => { if (live) setToolsTok(estimateTokens(JSON.stringify((l || []).filter(x => settings.builtinTools || !String(x.name).startsWith('builtin__'))))) }).catch(() => {})
+    return () => { live = false }
+  }, [flags.tools, settings.builtinTools])
+  const sysFull = systemPromptFor(conv.systemPrompt, conv, settings, t)
+  const cu = contextBreakdown(conv.messages.filter(m => !m.compareGroup || m.compareChosen), sysFull, ctxLen, [quote, input, ...atts.map(a => a.text)].join('\n'), findContextWindow(conv.model, settings.contextWindows || DEFAULT_CONTEXT_WINDOWS), toolsTok)
   const fmtK = (n: number) => n >= 10000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
-  const ctxTip = (cu.window ? t.ctxTip.replace('{used}', cu.used.toLocaleString()).replace('{window}', cu.window.toLocaleString()).replace('{n}', String(ctxLen)) : t.ctxTipUnknown.replace('{used}', cu.used.toLocaleString()).replace('{model}', conv.model))
+  const L = (n: number) => n.toLocaleString()
+  const ctxTip = t.ctxBreakdown.replace('{used}', L(cu.used)).replace('{window}', cu.window ? L(cu.window) : t.ctxWindowUnknown).replace('{n}', String(ctxLen))
+    .replace('{system}', L(cu.parts.system)).replace('{tools}', L(cu.parts.tools)).replace('{history}', L(cu.parts.history)).replace('{input}', L(cu.parts.input))
+    + '\n' + (cu.calib ? t.ctxCalib.replace('{est}', L(cu.calib.est)).replace('{real}', L(cu.calib.real)).replace('{f}', cu.calib.factor.toFixed(2)) + '\n' + (cu.factor !== 1 ? t.ctxCalibApplied : t.ctxCalibOk) : t.ctxNoReal)
     + (cu.level === 'near' ? '\n' + t.ctxNear : cu.level === 'over' ? '\n' + t.ctxOver : '')
 
   return (
     <div className="composer" ref={wrap} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); addFiles(e.dataTransfer.files) }}>
-      <div className={'ctxbar ' + cu.level} data-testid="ctx-usage" data-level={cu.level} title={ctxTip} role="meter" aria-label={t.ctxLabel}
+      <div className={'ctxbar ' + cu.level} data-testid="ctx-usage" data-level={cu.level} data-tip={ctxTip} tabIndex={0} data-calibrated={cu.factor !== 1 ? 'true' : 'false'} role="meter" aria-label={t.ctxLabel}
         aria-valuemin={0} aria-valuemax={cu.window || 0} aria-valuenow={cu.used}>
         <span className="ctxlabel">{t.ctxLabel}</span>
         {cu.window ? <span className="ctxtrack"><span className="ctxfill" style={{ width: `${Math.min(100, cu.ratio * 100).toFixed(1)}%` }} /></span> : null}

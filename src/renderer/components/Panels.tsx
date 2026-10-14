@@ -59,6 +59,8 @@ export function SettingsPanel({ s, t, onChange, actions, initialTab, priceModel 
         <div className="meta">{t.builtinToolsHint}</div>
         <label className="check"><input type="checkbox" data-testid="auto-title" checked={s.autoTitle !== false} onChange={e => set({ autoTitle: e.target.checked })} /> {t.autoTitle}</label>
         <div className="meta">{t.autoTitleHint}</div>
+        <label className="check"><input type="checkbox" data-testid="tell-model" checked={!!s.tellModel} onChange={e => set({ tellModel: e.target.checked })} /> {t.tellModel}</label>
+        <div className="meta">{t.tellModelHint}</div>
         <ChatExtras s={s} t={t} set={set} />
       </div>}
       {tab === 'network' && <div className="form">

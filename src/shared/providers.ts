@@ -435,6 +435,6 @@ export function cleanTitle(raw: string): string {
 /** one short, non-streaming-semantics request that summarizes a conversation title (auto title) */
 export async function summarizeTitle(p: ProviderConfig, model: string, user: string, reply: string, prompt: string, fetchImpl?: typeof fetch): Promise<string> {
   const msg: Message = { id: 't', role: 'user', createdAt: 0, content: `${prompt}\n\n[User]\n${user.slice(0, 1000)}\n\n[Assistant]\n${reply.slice(0, 1000)}` }
-  const res = await streamChat(p, '', [msg], { model, temperature: 0.3, maxTokens: 40, reasoning: false, fetchImpl })
+  const res = await streamChat(p, '', [msg], { model, temperature: 0.3, maxTokens: 120, reasoning: false, fetchImpl })
   return cleanTitle(res.text)
 }

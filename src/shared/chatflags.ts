@@ -25,3 +25,11 @@ export function convFlags(c: Pick<Conversation, 'reasoning' | 'tools' | 'webSear
 
 /** flags stored on a new conversation */
 export function newConvFlags(s: Pick<Settings, 'chatDefaults'>) { const d = chatDefaults(s); return { reasoning: d.reasoning, tools: d.tools, webSearch: d.webSearch } }
+
+/** Round 3 · B12: optionally tell the model which model it is (Settings → 对话, default off) */
+export function systemPromptFor(base: string, target: { model: string; providerId?: string }, s: Pick<Settings, 'tellModel' | 'providers'>, t: { tellModelLine: string }): string {
+  if (!s.tellModel || !target.model) return base
+  const prov = s.providers?.find(p => p.id === target.providerId)
+  const line = t.tellModelLine.replace('{model}', target.model).replace('{provider}', prov?.name || target.providerId || '')
+  return base.trim() ? `${base}\n\n${line}` : line
+}

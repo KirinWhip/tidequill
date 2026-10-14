@@ -54,9 +54,10 @@ test('A3: new conversations start with deep thinking / tools / web search off; e
   await R.hover(); await page.waitForTimeout(150); await shot('toggles-tooltip-reasoning')
   await S.hover(); await page.waitForTimeout(150); await shot('toggles-tooltip-search')
   // back to A: its own state is remembered (also after restart, it is stored with the conversation)
-  await page.locator('.conv').nth(1).click()
+  // (select by title, not position: the list is ordered by last update, and A may still be finishing its last save)
+  await page.locator('.conv', { hasText: '第一句' }).click()
   await expect(T).toHaveAttribute('aria-pressed', 'true'); await expect(R).toHaveAttribute('aria-pressed', 'true'); await expect(S).toHaveAttribute('aria-pressed', 'false')
-  await page.locator('.conv').first().click()
+  await page.locator('.conv', { hasText: zhCN.untitled }).click()
   await expect(S).toHaveAttribute('aria-pressed', 'true'); await expect(T).toHaveAttribute('aria-pressed', 'false')
   // defaults are configurable in Settings > Chat
   await page.keyboard.press('Control+,'); await page.locator('.tabs button[data-tab="chat"]').click()
@@ -141,4 +142,88 @@ test('A6: plaintext keys never reach the renderer (window state, IPC payloads, s
   await page.getByTestId('api-key-clear').click()
   await expect(page.getByTestId('api-key')).toHaveValue('')
   await expect(page.getByTestId('badge-mock')).toHaveAttribute('data-state', 'nokey')
+test('B7: provider badges 未配置 / 连接正常 / 连接失败 with last test time; Ollama probed', async () => {
+  ;({ app, page } = await launch(seedUserData({ mockUrl: mock.url, settings: { providers: [
+    { id: 'mock', name: 'OpenAI 兼容', type: 'openai', apiKey: 'sk-mock-1', baseURL: mock.url, models: ['mock-ok'] },
+    { id: 'down', name: 'Down', type: 'openai', apiKey: 'x', baseURL: 'http://127.0.0.1:9/v1', models: ['mock-ok'] },
+    { id: 'nokey', name: 'Anthropic', type: 'anthropic', apiKey: '', baseURL: 'https://api.anthropic.com', models: [] },
+    { id: 'ollama', name: 'Ollama', type: 'ollama', apiKey: '', baseURL: mock.url.replace(/\/v1$/, ''), models: [] },
+  ] } })))
+  await page.keyboard.press('Control+,'); await page.locator('.tabs button[data-tab="providers"]').click()
+  const B = (id: string) => page.getByTestId('badge-' + id)
+  await expect(B('mock')).toHaveAttribute('data-state', 'ok', { timeout: 10_000 }); await expect(B('mock')).toContainText(zhCN.provConnected)
+  await expect(B('down')).toHaveAttribute('data-state', 'fail', { timeout: 10_000 }); await expect(B('down')).toContainText(zhCN.provFail)
+  await expect(B('nokey')).toHaveAttribute('data-state', 'nokey'); await expect(B('nokey')).toContainText(zhCN.provNotConfigured)
+  await expect(B('ollama')).toHaveAttribute('data-state', 'ok', { timeout: 10_000 })
+  expect(await B('mock').getAttribute('data-tip')).toContain(zhCN.provLastTest.split('{time}')[0])
+  expect(await B('ollama').getAttribute('data-tip')).toContain('/api/tags')
+  await page.getByTestId('test-conn').click()
+  await expect(page.getByTestId('last-test')).toBeVisible()
+  await page.mouse.move(600, 20); await page.waitForTimeout(150)
+  await shot('badges')
+  await B('down').hover(); await page.waitForTimeout(200)
+  await shot('badges-tooltip')
+})
+
+test('B8: model dropdown grouped by family, newest first, older collapsed, search shows all', async () => {
+  const models = ['gpt-3.5-turbo', 'gpt-4', 'gpt-4.1', 'gpt-5', 'gpt-5.1', 'claude-3-5-sonnet-20241022', 'claude-sonnet-4-20250514', 'claude-sonnet-4-5-20250929', 'claude-sonnet-5-5', 'claude-3-haiku-20240307', 'claude-haiku-4-5', 'gemini-1.5-pro', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-3-pro', 'mock-ok']
+  ;({ app, page } = await launch(seedUserData({ mockUrl: mock.url, settings: { providers: [{ id: 'many', name: 'Many', type: 'openai', apiKey: 'k', baseURL: 'http://127.0.0.1:9/v1', models }], defaultProviderId: 'many', defaultModel: 'gpt-5' } })))
+  await newChat()
+  await page.locator('.modelbtn').click()
+  const heads = page.locator('.modelgroup-head')
+  await expect(heads).toHaveText(['GPT', 'Claude Sonnet', 'Claude Haiku', 'Gemini', zhCN.modelsOther])
+  const gpt = page.locator('.modelgroup[data-family="GPT"] .modelopt')
+  await expect(gpt).toHaveText(['gpt-5.1', 'gpt-5', 'gpt-4.1'])
+  await expect(page.locator('.modelgroup[data-family="Claude Sonnet"] .modelopt').first()).toHaveText('claude-sonnet-5-5')
+  await shot('model-dropdown-grouped')
+  await page.locator('.modelgroup[data-family="GPT"] [data-testid="model-older"]').click()
+  await expect(gpt).toHaveCount(5)
+  // keyboard navigation walks the visible list
+  await page.keyboard.press('ArrowDown')
+  await page.getByPlaceholder(zhCN.modelSearch).fill('sonnet')
+  await expect(page.locator('.modelgroup[data-family="Claude Sonnet"] .modelopt')).toHaveCount(4)
+  await expect(page.locator('[data-testid="model-older"]')).toHaveCount(0)
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.modelbtn')).toContainText('sonnet')
+})
+
+test('B9: auto-title still runs when the first reply failed (fallback title is replaced after the first success)', async () => {
+  ;({ app, page } = await launch(seedUserData({ mockUrl: mock.url, model: 'mock-401', settings: { ...NO_DEFAULTS, autoTitle: true } })))
+  await newChat()
+  await send(page, '帮我规划周末去杭州的行程')
+  await expect(page.locator('.msg.assistant').last()).toContainText('401')
+  await expect(page.locator('.conv.active, .conv.on').first()).toContainText('帮我规划周末去杭州') // fallback placeholder
+  await page.locator('.modelbtn').click(); await page.locator('.modelopt', { hasText: /^mock-ok$/ }).click()
+  await send(page, '再试一次')
+  await expect(page.locator('.msg.assistant').last()).toContainText('Hello from mock')
+  await expect(page.locator('.conv').first()).toContainText('模拟对话标题', { timeout: 10_000 })
+})
+
+test('B10/B11/B12: context hover breakdown, top-bar tooltips, optional model name in system prompt', async () => {
+  ;({ app, page } = await launch(seedUserData({ mockUrl: mock.url, settings: { ...NO_DEFAULTS, tellModel: true } })))
+  await newChat()
+  await send(page, '你好，介绍一下你自己')
+  await expect(page.locator('.msg.assistant').last()).toContainText('Hello from mock')
+  const sys = lastBody().messages.find((m: any) => m.role === 'system')
+  expect(sys?.content).toContain('mock-ok')
+  // B10
+  await page.getByTestId('tools-toggle').click()
+  await page.locator('.composer textarea').fill('下一个问题')
+  const ctx = page.getByTestId('ctx-usage')
+  await expect.poll(async () => (await ctx.getAttribute('data-tip')) || '').toMatch(new RegExp(zhCN.ctxBreakdown.split('\n')[2].split('{')[0]))
+  const tip = (await ctx.getAttribute('data-tip'))!
+  expect(tip).toMatch(/系统提示词：\d/); expect(tip).not.toMatch(/工具定义：0\n/)
+  await ctx.hover(); await page.waitForTimeout(200)
+  await shot('context-usage-breakdown')
+  // B11
+  for (const id of ['sys-btn', 'find-btn', 'compare-btn', 'convsettings-btn', 'export-btn']) expect(await page.getByTestId(id).getAttribute('data-tip')).toBeTruthy()
+  expect(await page.getByTestId('compare-btn').getAttribute('data-tip')).toContain(zhCN.compareTip2)
+  await page.getByTestId('compare-btn').hover(); await page.waitForTimeout(200)
+  await shot('topbar-compare-tooltip')
+  // B12 off -> no line
+  await page.keyboard.press('Control+,'); await page.locator('.tabs button[data-tab="chat"]').click()
+  await page.getByTestId('tell-model').uncheck(); await page.keyboard.press('Escape')
+  await send(page, '再来')
+  await expect(page.locator('.msg.assistant').last()).toContainText('Hello from mock')
+  expect(JSON.stringify(lastBody().messages)).not.toContain('当前使用的模型')
 })
