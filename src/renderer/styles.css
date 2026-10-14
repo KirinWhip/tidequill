@@ -242,3 +242,10 @@ a { color: var(--accent-text); }
   body { background: #fff; color: #000; }
   .msg { break-inside: avoid; }
 }
+/* ---- P3 ---- */
+.brand-logo { border-radius: 6px; }
+.about-head { display: flex; gap: var(--space4); align-items: center; margin-bottom: var(--space4); }
+.about-head img { border-radius: 20px; } .about-head h2 { margin: 0 0 4px; }
+.about-version { margin-top: 6px; font-weight: 600; }
+.about-table td:first-child { width: 120px; color: var(--fg-muted); }
+.notices pre { max-height: 240px; overflow: auto; font-size: var(--font-xs); background: var(--bg-subtle); padding: var(--space3); border-radius: var(--radius-sm); white-space: pre-wrap; }

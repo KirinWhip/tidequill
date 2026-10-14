@@ -11,7 +11,7 @@ export const api = hasApi ? window.api : {
   saveFile: async (name: string, content: string) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([content])); a.download = name; a.click(); return true },
   openFile: async () => null,
   syncTools: async () => ({ plugins: [], mcp: [] }), toolStatus: async () => ({ plugins: [], mcp: [] }), toolAllowlist: async () => [], revokeTool: async () => [],
-  copyText: (s: string) => navigator.clipboard.writeText(s), applySystem: async () => ({}), checkUpdate: async () => ({ status: 'unsupported' }), downloadUpdate: async () => false, installUpdate: async () => {}, exportPdf: async () => false, onCommand: () => {}, listTools: async () => [], callTool: async () => 'unavailable', openPluginDir: async () => {}, version: async () => 'web',
+  copyText: (s: string) => navigator.clipboard.writeText(s), applySystem: async () => ({}), checkUpdate: async () => ({ status: 'unsupported' }), downloadUpdate: async () => false, installUpdate: async () => {}, exportPdf: async () => false, onCommand: () => {}, listTools: async () => [], callTool: async () => 'unavailable', openPluginDir: async () => {}, version: async () => 'web', about: async () => ({ name: 'Tidequill', version: 'web', license: 'MIT', author: '', repo: '' }), notices: async () => '', openRepo: async () => {},
   httpStart: null, httpAbort: () => {}, httpDone: () => {},
 }
 const kv: KV = { get: k => api.kvGet(k), set: (k, v) => api.kvSet(k, v) }

@@ -1,6 +1,8 @@
 import type { Conversation } from './types'
 
-export const BACKUP_FORMAT = 'chatbox-clone-backup'
+export const BACKUP_FORMAT = 'tidequill-backup'
+/** format id written by pre-1.0 versions (before the rename), still accepted on restore */
+export const LEGACY_BACKUP_FORMAT = 'chatbox-clone-backup'
 export interface Backup { format: string; version: number; createdAt: number; data: Record<string, any> }
 export const BACKUP_KEYS = ['settings', 'conversations', 'personas', 'prompts', 'gallery', 'folders'] as const
 
@@ -18,7 +20,7 @@ export function makeBackup(data: Record<string, any>, includeSecrets = false): B
 
 export function parseBackup(text: string): Backup {
   const j = JSON.parse(text)
-  if (j?.format !== BACKUP_FORMAT || typeof j.data !== 'object') throw new Error('invalid backup')
+  if (![BACKUP_FORMAT, LEGACY_BACKUP_FORMAT].includes(j?.format) || typeof j.data !== 'object') throw new Error('invalid backup')
   return j
 }
 
@@ -41,7 +43,7 @@ export function mergeConversations(local: Conversation[], remote: Conversation[]
 
 export interface SyncPayload { format: string; version: number; updatedAt: number; conversations: Conversation[]; tombstones: Record<string, number>; folders: any[]; personas: any[]; prompts: any[] }
 export function makeSyncPayload(p: Omit<SyncPayload, 'format' | 'version' | 'updatedAt'>): SyncPayload {
-  return { format: 'chatbox-clone-sync', version: 1, updatedAt: Date.now(), ...p }
+  return { format: 'tidequill-sync', version: 1, updatedAt: Date.now(), ...p }
 }
 export function mergeSync(local: Omit<SyncPayload, 'format' | 'version' | 'updatedAt'>, remote: SyncPayload | null) {
   if (!remote) return local

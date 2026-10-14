@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0E7C86"/><stop offset="1" stop-color="#1B3F8F"/>
+    </linearGradient>
+    <linearGradient id="feather" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#D7F3F1"/>
+    </linearGradient>
+    <clipPath id="sq"><rect x="16" y="16" width="480" height="480" rx="112"/></clipPath>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bg)"/>
+  <g clip-path="url(#sq)">
+  <path d="M0 368 C 104 336, 152 336, 200 368 S 296 400, 344 368 S 456 336, 512 352 L 512 512 L 0 512 Z" fill="#5FD3C7" opacity=".55"/>
+  <path d="M0 408 C 112 380, 160 384, 208 408 S 304 436, 352 408 S 456 384, 512 396 L 512 512 L 0 512 Z" fill="#9BE7DE" opacity=".8"/>
+  </g>
+  <!-- quill feather -->
+  <path d="M392 88 C 300 104, 212 176, 176 300 L 168 336 L 200 320 C 312 284, 384 196, 392 88 Z" fill="url(#feather)"/>
+  <path d="M376 112 C 304 168, 240 232, 186 322" stroke="#0E7C86" stroke-width="10" stroke-linecap="round" fill="none"/>
+  <path d="M186 322 L 150 386" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round"/>
+  <!-- ink dot / speech -->
+  <circle cx="150" cy="392" r="12" fill="#FFFFFF"/>
+</svg>

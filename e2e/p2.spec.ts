@@ -296,7 +296,7 @@ test('backup (keys scrubbed) and restore full archive', async () => {
   await page.getByTestId('backup').click()
   await expect.poll(() => fs.existsSync(out)).toBe(true)
   const b = JSON.parse(fs.readFileSync(out, 'utf8'))
-  expect(b.format).toBe('chatbox-clone-backup'); expect(b.data.conversations).toHaveLength(4)
+  expect(b.format).toBe('tidequill-backup'); expect(b.data.conversations).toHaveLength(4)
   expect(fs.readFileSync(out, 'utf8')).not.toContain('sk-plaintext-e2e')
   await page.keyboard.press('Escape')
   // wipe conversations, then restore
@@ -337,7 +337,7 @@ test('WebDAV sync between two installs via local WebDAV server', async () => {
   const server = new webdav.WebDAVServer({ port: 0, hostname: '127.0.0.1', httpAuthentication: new webdav.HTTPBasicAuthentication(um, 'e2e'), privilegeManager: pm })
   const port: number = await new Promise(r => server.start((s: any) => r(s.address().port)))
   try {
-    const wd = (password: string) => ({ webdav: { enabled: true, url: `http://127.0.0.1:${port}/chatbox/`, username: 'dav', password } })
+    const wd = (password: string) => ({ webdav: { enabled: true, url: `http://127.0.0.1:${port}/tidequill/`, username: 'dav', password } })
     // wrong password -> auth error
     await start({ settings: wd('wrong'), conversations: [libConvs()[0]] })
     await openSettingsTab('data')
@@ -368,15 +368,15 @@ test('WebDAV sync between two installs via local WebDAV server', async () => {
     await openSettingsTab('data')
     await page.getByTestId('webdav-sync').click()
     await expect(page.getByTestId('settings-msg')).toContainText(zhCN.webdavSynced + '2')
-    const remote = await (await fetch(`http://127.0.0.1:${port}/chatbox/chatbox-sync.json`, { headers: { Authorization: 'Basic ' + Buffer.from('dav:davpass').toString('base64') } })).json()
+    const remote = await (await fetch(`http://127.0.0.1:${port}/tidequill/tidequill-sync.json`, { headers: { Authorization: 'Basic ' + Buffer.from('dav:davpass').toString('base64') } })).json()
     expect(remote.conversations.map((c: any) => c.title).sort()).toEqual(['学习 Rust', '旅行计划：京都'].sort())
     expect(Object.keys(remote.tombstones)).toContain('a22')
   } finally { await new Promise(r => server.stop(r)) }
 })
 
 test('update check against a release feed reports the new version', async () => {
-  const env: Record<string, string> = { CHATBOX_UPDATE_URL: `http://127.0.0.1:${mock.port}/updates` }
-  if (process.platform === 'linux') env.APPIMAGE = '/tmp/fake-chatbox.AppImage' // electron-updater only activates for AppImage on Linux
+  const env: Record<string, string> = { TIDEQUILL_UPDATE_URL: `http://127.0.0.1:${mock.port}/updates` }
+  if (process.platform === 'linux') env.APPIMAGE = '/tmp/fake-tidequill.AppImage' // electron-updater only activates for AppImage on Linux
   await start({}, env)
   await openSettingsTab('systemTab')
   await page.getByTestId('check-update').click()

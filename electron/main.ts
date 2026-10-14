@@ -7,7 +7,7 @@ import { runBridgeRequest, type BridgeRequest } from './http'
 import { encryptSettings, decryptSettings, type Cipher } from './secrets'
 import { mainStrings, type MainLang } from './i18n'
 
-if (process.env.CHATBOX_USER_DATA) app.setPath('userData', process.env.CHATBOX_USER_DATA)
+if (process.env.TIDEQUILL_USER_DATA) app.setPath('userData', process.env.TIDEQUILL_USER_DATA)
 
 const ALLOWED_KEYS = new Set(['settings', 'conversations', 'personas', 'prompts', 'gallery', 'modelCache', 'folders', 'tombstones'])
 const dataDir = () => path.join(app.getPath('userData'), 'data')
@@ -34,7 +34,8 @@ const readAllow = (): string[] => readJSON(allowFile()) || []
 function createWindow() {
   win = new BrowserWindow({
     width: 1280, height: 820, minWidth: 800, minHeight: 500,
-    title: 'ChatBox Clone',
+    title: 'Tidequill',
+    icon: resourcePath('icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -54,7 +55,23 @@ function createWindow() {
   })
 }
 
+/** 1.0 renamed the app; copy data once from the pre-1.0 profile folder so upgrades keep their conversations */
+function migrateLegacyProfile() {
+  if (process.env.TIDEQUILL_USER_DATA) return
+  const legacy = path.join(app.getPath('appData'), LEGACY_PRODUCT_NAME)
+  try {
+    if (fs.existsSync(path.join(legacy, 'data')) && !fs.existsSync(dataDir())) {
+      for (const sub of ['data', 'plugins']) if (fs.existsSync(path.join(legacy, sub))) fs.cpSync(path.join(legacy, sub), path.join(app.getPath('userData'), sub), { recursive: true })
+      if (fs.existsSync(path.join(legacy, 'tool-allowlist.json'))) fs.copyFileSync(path.join(legacy, 'tool-allowlist.json'), allowFile())
+    }
+  } catch (e) { console.error('legacy profile migration failed', e) }
+}
+const LEGACY_PRODUCT_NAME = 'ChatBox Clone' // product name used before v1.0
+
+export const ABOUT = { name: 'Tidequill', nameZh: '\u6f6e\u7b3a', license: 'MIT', author: '\u8ffd\u9010', repo: 'https://github.com/KirinWhip/tidequill' }
+
 app.whenReady().then(() => {
+  migrateLegacyProfile()
   fs.mkdirSync(dataDir(), { recursive: true })
   tools = new ToolManager(path.join(app.getPath('userData'), 'plugins'))
   tools.loadPlugins()
@@ -122,11 +139,14 @@ app.whenReady().then(() => {
     return tools.callTool(name, args)
   })
   // ---- system integration ----
+  ipcMain.handle('app:about', () => ({ ...ABOUT, version: app.getVersion(), electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node }))
+  ipcMain.handle('app:notices', () => { for (const f of [resourcePath('THIRD_PARTY_NOTICES.txt'), path.join(__dirname, '..', 'THIRD_PARTY_NOTICES.txt')]) { try { return fs.readFileSync(f, 'utf8') } catch { /* try next */ } } return '' })
+  ipcMain.handle('app:openRepo', () => shell.openExternal(ABOUT.repo))
   ipcMain.handle('system:apply', (_e, o: { globalShortcut: string; tray: boolean; launchAtLogin: boolean }) => applySystem(o))
   ipcMain.handle('update:check', async () => {
     try {
       autoUpdater.autoDownload = false
-      if (process.env.CHATBOX_UPDATE_URL) autoUpdater.setFeedURL({ provider: 'generic', url: process.env.CHATBOX_UPDATE_URL })
+      if (process.env.TIDEQUILL_UPDATE_URL) autoUpdater.setFeedURL({ provider: 'generic', url: process.env.TIDEQUILL_UPDATE_URL })
       const r = await autoUpdater.checkForUpdates()
       if (!r) return { status: 'unsupported', current: app.getVersion() }
       const latest = r.updateInfo.version
@@ -170,7 +190,7 @@ function applySystem(o: { globalShortcut: string; tray: boolean; launchAtLogin: 
   if (o.tray && !tray) {
     const s = mainStrings[lang]
     tray = new Tray(nativeImage.createFromPath(resourcePath('tray.png')))
-    tray.setToolTip('ChatBox Clone')
+    tray.setToolTip('Tidequill')
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: s.trayShow, click: toggleWindow },
       { label: s.trayNew, click: () => { win?.show(); win?.webContents.send('app:command', 'newChat') } },

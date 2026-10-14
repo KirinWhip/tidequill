@@ -170,3 +170,15 @@
 | 17 备份/导出/WebDAV | 已完成 | WebDAV 用本地 webdav-server 在 E2E 中验证两台“设备”同步与删除传播 |
 | 18 快捷键/托盘/开机启动/更新 | 部分完成 | 全局快捷键与托盘关窗驻留有 E2E；开机启动 Linux 不支持、Windows 未实测；更新检查只对模拟源验证（Linux 需 APPIMAGE 环境变量才启用），私有仓库下真实检查会失败，下载安装未验证 |
 | 19 首次引导 | 已完成 | 错误密钥与正确密钥的“测试连接”均有 E2E |
+
+# P3 后状态（v1.0.0，发布与合规）
+> 说明：v1.0.0 起产品改名为 **潮笺 Tidequill**。本文件中以前各节保留了当时使用的旧名称，作为历史记录。
+
+- 测试（Linux）：单元测试 136/136，E2E 52/52（新增 `e2e/p3.spec.ts`：新名称、窗口标题与版本、关于页面、第三方声明、在关于页面检查更新、从 0.x 迁移数据、四张截图）。
+- 改名、新图标、exe 版本信息（已用 pefile 读取本地 wine 构建的 exe 核对：CompanyName=追逐，ProductName=Tidequill，FileVersion=1.0.0，含图标资源）。
+- 许可证审计：结论为独立实现，采用 MIT，详见 `docs/LICENSE-AUDIT.md`。
+- 部分完成 / 未验证：
+  - 安装包未签名。
+  - 自动更新在私有仓库下无法使用。
+  - 0.x 数据迁移只在 Linux 上有 E2E；Windows 走相同的代码路径（`%APPDATA%`），但没有实测。
+  - 第三方声明只包含 npm 包，Electron / Chromium 的许可证依赖 electron-builder 自带的文件。

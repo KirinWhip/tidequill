@@ -1,5 +1,5 @@
 export const zhCN = {
-  brand: 'ChatBox Clone',
+  brand: '潮笺 Tidequill',
   newChat: '新对话', search: '搜索对话...', settings: '设置', personas: '角色', prompts: '提示词库', images: '图片生成', tools: '插件/工具',
   send: '发送', stop: '停止', regenerate: '重新生成', edit: '编辑', copy: '复制', copied: '已复制', delete: '删除', rename: '重命名', pin: '置顶', unpin: '取消置顶',
   save: '保存', cancel: '取消', saveSend: '保存并发送', placeholder: '输入消息，Enter 发送，Shift+Enter 换行；可粘贴/拖入图片和文件',
@@ -55,13 +55,14 @@ export const zhCN = {
   network: '网络', retries: '失败自动重试次数', retryBaseMs: '重试初始间隔（毫秒，指数退避）',
   data: '数据', backup: '备份全部数据', restore: '从备份恢复', backupIncludeKeys: '备份中包含 API 密钥（明文，请妥善保管）', restoreDone: '恢复完成', backupDone: '备份已保存', confirmRestore: '恢复会覆盖当前所有数据，确定继续？',
   exportAs: '导出', exportJsonConv: '导出 JSON', exportPdf: '导出 PDF',
-  webdav: 'WebDAV 同步', webdavUrl: 'WebDAV 地址（如 https://dav.example.com/chatbox/）', webdavUser: '用户名', webdavPass: '密码', webdavTest: '测试连接', webdavSync: '立即同步', webdavOk: '连接成功', webdavSynced: '同步完成：', webdavLast: '上次同步：', webdavEnable: '启用 WebDAV 同步',
+  webdav: 'WebDAV 同步', webdavUrl: 'WebDAV 地址（如 https://dav.example.com/tidequill/）', webdavUser: '用户名', webdavPass: '密码', webdavTest: '测试连接', webdavSync: '立即同步', webdavOk: '连接成功', webdavSynced: '同步完成：', webdavLast: '上次同步：', webdavEnable: '启用 WebDAV 同步',
   systemTab: '系统', globalShortcut: '显示/隐藏窗口的全局快捷键', globalShortcutFail: '快捷键注册失败（可能被占用）', trayEnable: '最小化到系统托盘（关闭窗口时保持后台运行）', launchAtLogin: '开机自动启动', launchAtLoginUnsupported: '当前系统不支持（仅 Windows / macOS）',
   autoCheckUpdate: '启动时检查更新', checkUpdate: '检查更新', updateAvailable: '发现新版本：', updateLatest: '已是最新版本', updateUnsupported: '当前安装方式不支持自动更新', updateError: '检查更新失败：', updateDownload: '下载并安装', currentVersion: '当前版本：',
   sc_global: '显示/隐藏窗口（全局）', sc_quote: '引用选中消息',
   folders: '文件夹', newFolder: '新建文件夹', folderName: '文件夹名称', renameFolder: '重命名文件夹', deleteFolder: '删除文件夹', moveTo: '移动到', editTags: '编辑标签',
   select: '多选', selectDone: '完成', deleteSelected: '删除所选', selectedCount: '已选 {n} 项', confirmBatchDelete: '确定删除所选的 {n} 个对话？', allTags: '全部标签',
   ollamaDetect: '检测本地 Ollama', ollamaFound: '已检测到本地 Ollama，模型数：', ollamaNotFound: '未检测到本地 Ollama（{url}）',
-  onbTitle: '欢迎使用 ChatBox Clone', onbSubtitle: '选择一个模型提供方并填写 API 密钥即可开始。', onbPick: '选择提供方', onbTest: '测试连接', onbTesting: '测试中…', onbOk: '连接成功，可用模型数：', onbStart: '开始使用', onbSkip: '跳过',
+  onbTitle: '欢迎使用潮笺 Tidequill', onbSubtitle: '选择一个模型提供方并填写 API 密钥即可开始。', onbPick: '选择提供方', onbTest: '测试连接', onbTesting: '测试中…', onbOk: '连接成功，可用模型数：', onbStart: '开始使用', onbSkip: '跳过',
+  about: '关于', aboutTagline: '独立开发的开源桌面 AI 聊天客户端', license: '许可证', author: '作者', repository: '项目主页', openRepo: '在浏览器中打开', thirdParty: '第三方开源组件声明', runtime: '运行环境', independentNote: '本软件为独立实现，未复用其他项目的代码或素材。',
 }
 export type Dict = typeof zhCN

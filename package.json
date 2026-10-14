@@ -1,26 +1,30 @@
 {
-  "name": "chatbox-clone",
-  "productName": "ChatBox Clone",
-  "version": "0.4.0",
-  "description": "桌面 AI 聊天客户端",
-  "author": "追逐 常",
+  "name": "tidequill",
+  "productName": "Tidequill",
+  "version": "1.0.0",
+  "description": "Tidequill (潮笺) — an independent open-source desktop AI chat client",
+  "author": {
+    "name": "追逐",
+    "email": "KirinWhip@users.noreply.github.com"
+  },
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "concurrently -k \"vite\" \"npm:dev:electron\"",
     "dev:electron": "npm run build:main && wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .",
-    "build:main": "esbuild electron/main.ts electron/preload.ts --bundle --platform=node --format=cjs --outdir=dist-electron --external:electron --target=node20",
-    "build": "tsc --noEmit && vite build && npm run build:main",
+    "build:main": "esbuild electron/main.ts electron/preload.ts --bundle --platform=node --format=cjs --outdir=dist-electron --external:electron --target=node20 --metafile=build-meta/main-meta.json",
+    "build": "tsc --noEmit && vite build && npm run build:main && node scripts/gen-notices.mjs",
     "start": "electron .",
     "test": "vitest run",
     "dist:win": "npm run build && electron-builder --win nsis portable --x64",
     "dist:linux": "npm run build && electron-builder --linux AppImage",
     "pack:linux-dir": "npm run build && electron-builder --linux dir",
     "pack:win-dir": "npm run build && electron-builder --win dir --x64",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "notices": "node scripts/gen-notices.mjs"
   },
   "build": {
-    "appId": "app.chatboxclone.desktop",
-    "productName": "ChatBox Clone",
+    "appId": "io.github.kirinwhip.tidequill",
+    "productName": "Tidequill",
     "directories": {
       "output": "release"
     },
@@ -33,14 +37,19 @@
       "target": [
         "nsis",
         "portable"
-      ]
+      ],
+      "icon": "build/icon.ico",
+      "legalTrademarks": "Tidequill",
+      "executableName": "Tidequill"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "language": "2052",
-      "shortcutName": "ChatBox Clone",
-      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
+      "shortcutName": "Tidequill",
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
     },
     "portable": {
       "artifactName": "${productName}-${version}-portable.exe"
@@ -49,14 +58,14 @@
       "target": [
         "AppImage"
       ],
-      "executableName": "chatbox-clone",
+      "executableName": "tidequill",
       "category": "Utility"
     },
     "publish": [
       {
         "provider": "github",
         "owner": "KirinWhip",
-        "repo": "chatbox-clone",
+        "repo": "tidequill",
         "releaseType": "release"
       }
     ],
@@ -69,8 +78,21 @@
       {
         "from": "build/tray@2x.png",
         "to": "tray@2x.png"
+      },
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      },
+      {
+        "from": "THIRD_PARTY_NOTICES.txt",
+        "to": "THIRD_PARTY_NOTICES.txt"
+      },
+      {
+        "from": "LICENSE",
+        "to": "LICENSE.txt"
       }
-    ]
+    ],
+    "copyright": "Copyright © 2026 追逐"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
@@ -107,6 +129,8 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/KirinWhip/chatbox-clone.git"
-  }
+    "url": "https://github.com/KirinWhip/tidequill.git"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/KirinWhip/tidequill"
 }

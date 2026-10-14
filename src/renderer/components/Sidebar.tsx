@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type RefObject } from 'react'
 import {
   MessageSquarePlus, Search, Settings as SettingsIcon, Users, BookOpen, Image as ImageIcon, Puzzle, FileInput, FileOutput, Pin, PinOff, Pencil, Trash2,
-  MessageSquare, Folder as FolderIcon, FolderPlus, FolderOpen, ChevronRight, CheckSquare, Square, Tag, FileDown, SlidersHorizontal, MoreHorizontal, Download, Loader2,
+  MessageSquare, Folder as FolderIcon, FolderPlus, FolderOpen, ChevronRight, CheckSquare, Square, Tag, FileDown, SlidersHorizontal, MoreHorizontal, Download, Loader2, Info,
 } from 'lucide-react'
 import type { Conversation, Folder } from '../../shared/types'
 import { searchConversations, searchSnippet, sortConversations, uid } from '../../shared/storage'
@@ -46,14 +46,14 @@ export function Sidebar(p: Props) {
   const toggleSel = (id: string) => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
   const navItems: [string, any, string][] = [
     ['personas', Users, t.personas], ['prompts', BookOpen, t.prompts], ['images', ImageIcon, t.images], ['tools', Puzzle, t.tools],
-    ['import', FileInput, t.importData], ['export', FileOutput, t.exportJson], ['settings', SettingsIcon, t.settings],
+    ['import', FileInput, t.importData], ['export', FileOutput, t.exportJson], ['settings', SettingsIcon, t.settings], ['about', Info, t.about],
   ]
   const menuConv = menu?.kind === 'conv' ? p.convs.find(c => c.id === menu.id) : undefined
   const menuFolder = menu?.kind === 'folder' ? p.folders.find(f => f.id === menu.id) : undefined
 
   return (
     <aside className="sidebar">
-      <div className="brand"><MessageSquare size={20} className="brand-icon" />{t.brand}</div>
+      <div className="brand"><img src="./logo.png" alt="" width={22} height={22} className="brand-logo" />{t.brand}</div>
       {p.update && <div className="updatebar"><Download size={14} /><span>{t.updateAvailable}{p.update.latest}</span>
         <button className="btn primary sm" disabled={updating} onClick={() => { setUpdating(true); p.onUpdate() }}>{updating ? <Loader2 size={13} className="spin" /> : t.updateDownload}</button></div>}
       <button className="btn primary block" onClick={p.onNew}><MessageSquarePlus size={16} />{t.newChat}</button>

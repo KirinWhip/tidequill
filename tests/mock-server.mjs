@@ -32,7 +32,7 @@ export function startMockServer(port = 0) {
       }
       if (req.method === 'GET' && /\/updates\/latest(-linux|-mac)?\.yml(\?|$)/.test(req.url)) {
         res.writeHead(200, { 'Content-Type': 'text/yaml' })
-        const file = req.url.includes('linux') ? `chatbox-clone-${UPDATE_VERSION}.AppImage` : `ChatBox-Clone-Setup-${UPDATE_VERSION}-x64.exe`
+        const file = req.url.includes('linux') ? `tidequill-${UPDATE_VERSION}.AppImage` : `Tidequill-Setup-${UPDATE_VERSION}-x64.exe`
         return res.end(`version: ${UPDATE_VERSION}\nfiles:\n  - url: ${file}\n    sha512: ${'A'.repeat(86)}==\n    size: 1000\npath: ${file}\nsha512: ${'A'.repeat(86)}==\nreleaseDate: '2026-10-01T00:00:00.000Z'\n`)
       }
       if (req.method === 'GET' && req.url.endsWith('/models') && /sk-bad/.test(req.headers.authorization || '')) {

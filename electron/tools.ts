@@ -63,7 +63,7 @@ export class ToolManager {
     const conn: McpConn = { cfg, tools: [], status: 'connecting' }
     this.mcp.set(cfg.id, conn)
     try {
-      const client = new Client({ name: 'chatbox-clone', version: '0.1.0' })
+      const client = new Client({ name: 'tidequill', version: '1.0.0' })
       if (cfg.type === 'stdio') {
         await client.connect(new StdioClientTransport({ command: cfg.command!, args: cfg.args || [], env: { ...process.env, ...(cfg.env || {}) } as any }))
       } else {

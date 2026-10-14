@@ -7,15 +7,15 @@ import path from 'node:path'
 export function appPath(): string {
   if (process.env.APP_PATH) return process.env.APP_PATH
   const rel = path.resolve(__dirname, '..', 'release')
-  if (process.platform === 'win32') return path.join(rel, 'win-unpacked', 'ChatBox Clone.exe')
-  if (process.platform === 'darwin') return path.join(rel, 'mac', 'ChatBox Clone.app', 'Contents', 'MacOS', 'ChatBox Clone')
-  return path.join(rel, 'linux-unpacked', 'chatbox-clone')
+  if (process.platform === 'win32') return path.join(rel, 'win-unpacked', 'Tidequill.exe')
+  if (process.platform === 'darwin') return path.join(rel, 'mac', 'Tidequill.app', 'Contents', 'MacOS', 'Tidequill')
+  return path.join(rel, 'linux-unpacked', 'tidequill')
 }
 
 export interface Seed { mockUrl: string; language?: 'zh' | 'en' | 'system'; theme?: 'light' | 'dark'; conversations?: any[]; model?: string; settings?: Record<string, any>; files?: Record<string, any> }
 
 export function seedUserData(seed: Seed): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chatbox-e2e-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tidequill-e2e-'))
   fs.mkdirSync(path.join(dir, 'data'), { recursive: true })
   const settings = {
     language: seed.language || 'zh', theme: seed.theme || 'light', fontSize: 14, temperature: 0.7, maxTokens: 512, contextLength: 20,
@@ -38,7 +38,7 @@ export async function launch(userData: string, extraEnv: Record<string, string> 
   const app = await electron.launch({
     executablePath: appPath(),
     args: process.platform === 'linux' ? ['--no-sandbox', ...(process.env.E2E_EXTRA_ARGS || '').split(' ').filter(Boolean)] : [],
-    env: { ...process.env, CHATBOX_USER_DATA: userData, ELECTRON_ENABLE_LOGGING: '1', ...extraEnv },
+    env: { ...process.env, TIDEQUILL_USER_DATA: userData, ELECTRON_ENABLE_LOGGING: '1', ...extraEnv },
   })
   const page = await app.firstWindow()
   const consoleErrors: string[] = []

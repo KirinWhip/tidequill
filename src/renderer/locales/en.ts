@@ -1,6 +1,6 @@
 import type { Dict } from './zh-CN'
 export const en: Dict = {
-  brand: 'ChatBox Clone',
+  brand: 'Tidequill',
   newChat: 'New Chat', search: 'Search chats...', settings: 'Settings', personas: 'Personas', prompts: 'Prompt Library', images: 'Image Generation', tools: 'Plugins / Tools',
   send: 'Send', stop: 'Stop', regenerate: 'Regenerate', edit: 'Edit', copy: 'Copy', copied: 'Copied', delete: 'Delete', rename: 'Rename', pin: 'Pin', unpin: 'Unpin',
   save: 'Save', cancel: 'Cancel', saveSend: 'Save & Send', placeholder: 'Type a message. Enter to send, Shift+Enter for newline; paste/drop images & files',
@@ -55,12 +55,13 @@ export const en: Dict = {
   network: 'Network', retries: 'Automatic retries on failure', retryBaseMs: 'Initial retry delay (ms, exponential backoff)',
   data: 'Data', backup: 'Back up all data', restore: 'Restore from backup', backupIncludeKeys: 'Include API keys in backup (plain text, keep it safe)', restoreDone: 'Restore completed', backupDone: 'Backup saved', confirmRestore: 'Restoring will overwrite all current data. Continue?',
   exportAs: 'Export', exportJsonConv: 'Export JSON', exportPdf: 'Export PDF',
-  webdav: 'WebDAV sync', webdavUrl: 'WebDAV URL (e.g. https://dav.example.com/chatbox/)', webdavUser: 'Username', webdavPass: 'Password', webdavTest: 'Test connection', webdavSync: 'Sync now', webdavOk: 'Connected', webdavSynced: 'Synced: ', webdavLast: 'Last sync: ', webdavEnable: 'Enable WebDAV sync',
+  webdav: 'WebDAV sync', webdavUrl: 'WebDAV URL (e.g. https://dav.example.com/tidequill/)', webdavUser: 'Username', webdavPass: 'Password', webdavTest: 'Test connection', webdavSync: 'Sync now', webdavOk: 'Connected', webdavSynced: 'Synced: ', webdavLast: 'Last sync: ', webdavEnable: 'Enable WebDAV sync',
   systemTab: 'System', globalShortcut: 'Global shortcut to show/hide window', globalShortcutFail: 'Could not register shortcut (maybe in use)', trayEnable: 'Minimize to system tray (keep running when window is closed)', launchAtLogin: 'Launch at login', launchAtLoginUnsupported: 'Not supported on this OS (Windows / macOS only)',
   autoCheckUpdate: 'Check for updates on startup', checkUpdate: 'Check for updates', updateAvailable: 'New version available: ', updateLatest: 'You are on the latest version', updateUnsupported: 'Auto update is not supported for this installation', updateError: 'Update check failed: ', updateDownload: 'Download & install', currentVersion: 'Current version: ',
   sc_global: 'Show/hide window (global)', sc_quote: 'Quote message',
   folders: 'Folders', newFolder: 'New folder', folderName: 'Folder name', renameFolder: 'Rename folder', deleteFolder: 'Delete folder', moveTo: 'Move to', editTags: 'Edit tags',
   select: 'Select', selectDone: 'Done', deleteSelected: 'Delete selected', selectedCount: '{n} selected', confirmBatchDelete: 'Delete the {n} selected conversations?', allTags: 'All tags',
   ollamaDetect: 'Detect local Ollama', ollamaFound: 'Local Ollama detected, models: ', ollamaNotFound: 'No local Ollama found ({url})',
-  onbTitle: 'Welcome to ChatBox Clone', onbSubtitle: 'Pick a model provider and enter your API key to get started.', onbPick: 'Choose a provider', onbTest: 'Test connection', onbTesting: 'Testing…', onbOk: 'Connected, models available: ', onbStart: 'Get started', onbSkip: 'Skip',
+  onbTitle: 'Welcome to Tidequill', onbSubtitle: 'Pick a model provider and enter your API key to get started.', onbPick: 'Choose a provider', onbTest: 'Test connection', onbTesting: 'Testing…', onbOk: 'Connected, models available: ', onbStart: 'Get started', onbSkip: 'Skip',
+  about: 'About', aboutTagline: 'An independent open-source desktop AI chat client', license: 'License', author: 'Author', repository: 'Repository', openRepo: 'Open in browser', thirdParty: 'Third-party notices', runtime: 'Runtime', independentNote: 'This is an independent implementation; it reuses no code or assets from other projects.',
 }

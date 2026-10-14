@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, Loader2, XCircle, MessageSquare } from 'lucide-react'
+import { Check, Loader2, XCircle } from 'lucide-react'
 import type { Settings } from '../../shared/types'
 import { useT } from '../i18n'
 import { listModels } from '../../shared/providers'
@@ -29,7 +29,7 @@ export function Onboarding({ settings, onDone }: { settings: Settings; onDone(s:
     <div className="overlay onboarding">
       <div className="modal narrow" role="dialog" aria-label={t.onbTitle}>
         <div className="panel">
-          <div className="onb-head"><MessageSquare size={30} className="brand-icon" /><h2>{t.onbTitle}</h2><p className="meta">{t.onbSubtitle}</p></div>
+          <div className="onb-head"><img src="./logo.png" alt="" width={56} height={56} /><h2>{t.onbTitle}</h2><p className="meta">{t.onbSubtitle}</p></div>
           <div className="form">
             <div className="meta">{t.onbPick}</div>
             <div className="provgrid">{settings.providers.map(p => <button key={p.id} className={'provcard' + (p.id === pid ? ' on' : '')} onClick={() => pick(p.id)}>{p.name}</button>)}</div>

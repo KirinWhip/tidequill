@@ -37,7 +37,7 @@ jobs:
           path: |
             playwright-report/
             test-results/
-            screenshots/p0/
+            screenshots/
           if-no-files-found: warn
       - name: Upload installers
         uses: actions/upload-artifact@v4
@@ -60,7 +60,33 @@ jobs:
         with:
           name: windows-installers
           path: dist-release
+      - name: Compute SHA256 and release notes
+        working-directory: dist-release
+        run: |
+          ls -la
+          sha256sum *.exe > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          {
+            echo "## Tidequill 潮笺 ${GITHUB_REF_NAME}"
+            echo
+            echo "Windows x64：\`*-Setup-*.exe\` 为安装版，\`*-portable.exe\` 为便携版。安装包未签名，首次运行出现 SmartScreen 时请点“更多信息 → 仍要运行”（详见 README）。"
+            echo
+            echo "### SHA256"
+            echo
+            echo "| 文件 | SHA256 |"
+            echo "|---|---|"
+            while read -r h f; do echo "| \`${f#\*}\` | \`$h\` |"; done < SHA256SUMS.txt
+            echo
+            echo "PowerShell 校验：\`Get-FileHash .\\<文件名> -Algorithm SHA256\`"
+          } > ../release-notes.md
+          cat ../release-notes.md
       - uses: softprops/action-gh-release@v2
         with:
-          files: dist-release/*.exe
+          files: |
+            dist-release/*.exe
+            dist-release/*.blockmap
+            dist-release/latest.yml
+            dist-release/SHA256SUMS.txt
+          body_path: release-notes.md
           generate_release_notes: true
+          make_latest: 'true'

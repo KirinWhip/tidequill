@@ -2,7 +2,7 @@ import type { WebDavConfig } from '../shared/types'
 import { ProviderError } from '../shared/errors'
 import { bridgeFetch } from './api'
 
-const FILE = 'chatbox-sync.json'
+const FILE = 'tidequill-sync.json'
 const b64 = (s: string) => btoa(String.fromCharCode(...new TextEncoder().encode(s)))
 const dir = (c: WebDavConfig) => c.url.replace(/\/*$/, '/')
 const headers = (c: WebDavConfig, extra: Record<string, string> = {}) => ({ ...(c.username ? { Authorization: 'Basic ' + b64(`${c.username}:${c.password}`) } : {}), ...extra })

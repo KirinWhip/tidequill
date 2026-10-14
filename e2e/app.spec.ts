@@ -31,7 +31,7 @@ async function newChatAndSend(text: string) {
 
 test('launches, security settings on, plaintext API key migrated to encrypted', async () => {
   await start()
-  expect(await page.title()).toBe('ChatBox Clone')
+  expect(await page.title()).toBe('Tidequill')
   const prefs = await app.evaluate(({ BrowserWindow }) => {
     const w = BrowserWindow.getAllWindows()[0]
     const p = (w.webContents as any).getLastWebPreferences?.() || {}
@@ -199,7 +199,7 @@ for (const theme of ['light', 'dark'] as const) for (const lang of ['zh', 'en'] 
     await expect(page.locator('.mermaid svg')).toContainText(lang === 'zh' ? '分区' : 'Partition') // labels survive DOMPurify
     await page.waitForTimeout(500)
     // raw HTML in markdown is not rendered -> no XSS
-    expect(await page.title()).toBe('ChatBox Clone')
+    expect(await page.title()).toBe('Tidequill')
     expect(await page.locator('.bubble img[src="x"]').count()).toBe(0)
     expect(consoleErrors.filter(e => /Content Security Policy/i.test(e))).toEqual([])
     await page.screenshot({ path: path.join(SHOTS, `${theme}-${lang}.png`) })

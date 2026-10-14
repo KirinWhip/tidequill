@@ -4,3 +4,4 @@ dist-electron
 release
 playwright-report
 test-results
+build-meta/

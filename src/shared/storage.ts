@@ -118,7 +118,7 @@ export function conversationToMarkdown(c: Conversation, l: MdLabels = { model: '
 }
 
 export function exportJSON(list: Conversation[]): string {
-  return JSON.stringify({ app: 'chatbox-clone', version: 1, conversations: list }, null, 2)
+  return JSON.stringify({ app: 'tidequill', version: 1, conversations: list }, null, 2)
 }
 
 export function importJSON(text: string): Conversation[] {

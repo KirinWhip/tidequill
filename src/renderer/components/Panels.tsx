@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Check, XCircle, Download, Upload, Trash2, Loader2, Search, RefreshCw } from 'lucide-react'
+import { Plus, Check, XCircle, Download, Upload, Trash2, Loader2, Search, RefreshCw, ExternalLink } from 'lucide-react'
 import type { AppActions } from '../App'
 import { DEFAULT_PRICES } from '../../shared/usage'
 import { webdavTest } from '../webdav'
@@ -220,6 +220,44 @@ export function ToolsPanel({ s, t, onChange }: { s: Settings; t: Dict; onChange(
       <p className="hint">{t.pluginHelp}</p>
       <button onClick={() => api.openPluginDir()}>{t.openPluginDir}</button>
       {status.plugins.map((p: any) => <div key={p.name} className="card"><b>{p.name}</b> <small>{p.name === 'builtin' ? t.builtinTools : p.description}</small><div>{p.tools.join(', ')}</div></div>)}
+    </div>
+  )
+}
+
+export function AboutPanel({ t, onCheckUpdate }: { t: Dict; onCheckUpdate(): Promise<any> }) {
+  const [info, setInfo] = useState<any>(null)
+  const [notices, setNotices] = useState('')
+  const [msg, setMsg] = useState<any>('')
+  useEffect(() => { api.about().then(setInfo); api.notices().then(setNotices) }, [])
+  if (!info) return null
+  const count = /Packages: (\d+)/.exec(notices)?.[1]
+  return (
+    <div className="panel about" data-testid="about">
+      <div className="about-head">
+        <img src="./logo.png" alt={info.name} width={88} height={88} />
+        <div>
+          <h2>{t.brand}</h2>
+          <div className="meta">{t.aboutTagline}</div>
+          <div className="about-version" data-testid="about-version">{t.currentVersion}{info.version}</div>
+        </div>
+      </div>
+      <table className="sc about-table"><tbody>
+        <tr><td>{t.license}</td><td>{info.license}</td></tr>
+        <tr><td>{t.author}</td><td>{info.author}</td></tr>
+        <tr><td>{t.repository}</td><td><button className="linkbtn" data-testid="about-repo" onClick={() => api.openRepo()}><ExternalLink size={13} />{info.repo}</button></td></tr>
+        <tr><td>{t.runtime}</td><td className="meta">Electron {info.electron} · Chromium {info.chrome} · Node {info.node}</td></tr>
+      </tbody></table>
+      <p className="meta">{t.independentNote}</p>
+      <div className="row">
+        <button data-testid="about-check-update" onClick={async () => {
+          setMsg(<Loader2 size={14} className="spin" />)
+          const r = await onCheckUpdate()
+          setMsg(r.status === 'available' ? <span className="okmsg">{t.updateAvailable + r.latest}</span> : r.status === 'latest' ? <span className="okmsg"><Check size={14} />{t.updateLatest}</span>
+            : <span className="errmsg"><XCircle size={14} />{r.status === 'unsupported' ? t.updateUnsupported : t.updateError + (r.error || '')}</span>)
+        }}><RefreshCw size={14} />{t.checkUpdate}</button>
+        <span data-testid="about-msg">{msg}</span>
+      </div>
+      <details className="notices"><summary>{t.thirdParty}{count ? ` (${count})` : ''}</summary><pre data-testid="notices">{notices}</pre></details>
     </div>
   )
 }

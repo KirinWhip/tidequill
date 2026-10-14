@@ -15,9 +15,9 @@ import { Onboarding } from './components/Onboarding'
 import { ConvSettings } from './components/ConvSettings'
 import { webdavGet, webdavPut, webdavTest } from './webdav'
 import { MessageSquare, MessageSquarePlus, X, CheckCircle2 } from 'lucide-react'
-import { SettingsPanel, PersonasPanel, PromptsPanel, ImagesPanel, ToolsPanel } from './components/Panels'
+import { SettingsPanel, PersonasPanel, PromptsPanel, ImagesPanel, ToolsPanel, AboutPanel } from './components/Panels'
 
-type Modal = null | 'settings' | 'personas' | 'prompts' | 'images' | 'tools'
+type Modal = null | 'settings' | 'personas' | 'prompts' | 'images' | 'tools' | 'about'
 export interface AppActions {
   backup(includeKeys: boolean): Promise<void>; restore(): Promise<void>; sync(): Promise<string>
   detectOllama(): Promise<{ ok: boolean; count: number; url: string }>
@@ -239,7 +239,7 @@ export default function App() {
       const data: Record<string, any> = {}
       for (const k of BACKUP_KEYS) data[k] = await api.kvGet(k)
       data.conversations = convsRef.current
-      if (await api.saveFile(`chatbox-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(makeBackup(data, includeKeys)))) showToast(t.backupDone)
+      if (await api.saveFile(`tidequill-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(makeBackup(data, includeKeys)))) showToast(t.backupDone)
     },
     async restore() {
       const f = await api.openFile(['json'])
@@ -290,7 +290,7 @@ export default function App() {
       <Sidebar convs={convs} folders={folders} curId={curId} searchRef={searchRef} busyId={busyId}
         onSelect={setCurId} onNew={() => newChat()} onPatch={patchConv} onDelete={deleteConvs} onFolders={saveFolders}
         onOpenSettings={id => setConvSettingsId(id)} onModal={m => setModal(m as Modal)} onImport={doImport}
-        onExportAll={() => api.saveFile('chatbox-export.json', exportJSON(convs))}
+        onExportAll={() => api.saveFile('tidequill-export.json', exportJSON(convs))}
         onExportMd={c => api.saveFile(`${c.title}.md`, conversationToMarkdown(c, { model: t.exportedModel, attachment: t.attachment }))}
         update={update} onUpdate={() => api.downloadUpdate().then(() => api.installUpdate())} />
       <main className="main">
@@ -309,6 +309,7 @@ export default function App() {
           {modal === 'personas' && <PersonasPanel list={personas} t={t} onChange={l => { setPersonas(l); storage.savePersonas(l) }} onUse={p => newChat(p)} />}
           {modal === 'prompts' && <PromptsPanel list={prompts} t={t} onChange={l => { setPrompts(l); storage.savePrompts(l) }} />}
           {modal === 'images' && <ImagesPanel s={settings} t={t} gallery={gallery} onChange={g => { setGallery(g); storage.saveGallery(g) }} />}
+          {modal === 'about' && <AboutPanel t={t} onCheckUpdate={actions.checkUpdate} />}
           {modal === 'tools' && <ToolsPanel s={settings} t={t} onChange={saveSettings} />}
         </div>
       </div>}
