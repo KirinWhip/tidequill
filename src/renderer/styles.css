@@ -421,3 +421,21 @@ section[data-testid="grants"] > .row:last-child { margin-top: var(--space3); }
 .secretfield { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .secretfield .keyfield { flex: 1; min-width: 200px; }
 .secretfield .secret-state { display: inline-flex; align-items: center; gap: 4px; color: var(--ok, #15803d); font-size: var(--font-sm); padding: 4px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-subtle); }
+/* ---- Round 3 · B8: grouped model dropdown + themed scrollbars ---- */
+.modelgroup + .modelgroup { border-top: 1px solid var(--border); margin-top: 2px; padding-top: 2px; }
+.modelgroup-head { font-size: 11px; font-weight: 600; color: var(--fg-muted); padding: 6px 10px 2px; text-transform: none; letter-spacing: .02em; }
+.modelolder { display: flex; align-items: center; gap: 4px; background: none; border: 0; color: var(--accent-text); font-size: var(--font-xs); padding: 4px 10px 6px; cursor: pointer; }
+.modelolder .rot { transform: rotate(90deg); }
+.modellist, .modal, .errpre, .plist { scrollbar-width: thin; scrollbar-color: var(--border-strong, var(--border)) transparent; }
+.modellist::-webkit-scrollbar, .modal::-webkit-scrollbar { width: 8px; height: 8px; }
+.modellist::-webkit-scrollbar-thumb, .modal::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+.modellist::-webkit-scrollbar-thumb:hover, .modal::-webkit-scrollbar-thumb:hover { background: var(--fg-muted); background-clip: padding-box; }
+.modellist::-webkit-scrollbar-track, .modal::-webkit-scrollbar-track { background: transparent; }
+/* ---- Round 3 · B11: cost in the conversation bar is never truncated ---- */
+.convbar { min-width: 0; }
+.convbar .usage-total, .convbar .noprice { white-space: nowrap; flex: none; }
+.convbar > .linkbtn:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+[data-tip]:hover::after, [data-tip]:focus-visible::after, .sbadge[data-tip]:hover::after { white-space: pre-line; }
+/* B11: top-bar icon tooltips open toward the inside of the window; a tooltip must never make the page scroll */
+.chathead .icon-btn[data-tip]:hover::after, .chathead .icon-btn[data-tip]:focus-visible::after { left: auto; right: 0; transform: none; }
+html, body { overflow: hidden; }

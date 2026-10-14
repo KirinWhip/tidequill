@@ -47,6 +47,6 @@ describe('A7 auto title', () => {
       return new Response(new ReadableStream({ start(c) { c.enqueue(enc.encode('data: {"choices":[{"delta":{"content":"杭州周末游"}}]}\n\ndata: [DONE]\n\n')); c.close() } }), { status: 200 })
     }
     expect(await summarizeTitle(P, 'deepseek-flash', '帮我规划周末去杭州', '好的……', '请为下面这段对话起一个标题', fetchImpl)).toBe('杭州周末游')
-    expect(body.tools).toBeUndefined(); expect(body.max_tokens).toBe(40); expect(body.thinking).toEqual({ type: 'disabled' })
+    expect(body.tools).toBeUndefined(); expect(body.max_tokens).toBe(120); expect(body.thinking).toEqual({ type: 'disabled' })
   })
 })

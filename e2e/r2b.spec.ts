@@ -154,7 +154,7 @@ test('sidebar: grouped toolbox, no import/export, empty folder guidance, shortcu
   await expect(page.locator('.sidenav')).not.toContainText(zhCN.exportJson)
   await page.locator('.conv').first().click()
   for (const [label, sc] of [[zhCN.convSettings, 'Shift+S'], [zhCN.exportAs, '+E'], [zhCN.systemPrompt, 'Shift+P']]) {
-    expect(await page.getByRole('button', { name: label, exact: true }).getAttribute('title')).toContain(sc)
+    expect(await page.getByRole('button', { name: label, exact: true }).getAttribute('data-tip')).toContain(sc)
   }
   expect(await page.getByRole('button', { name: zhCN.reasoning, exact: true }).getAttribute('data-tip')).toContain('+D')
   // shortcuts work
@@ -216,7 +216,7 @@ test('context usage indicator: estimate vs model window, warning near / over the
   const bar = page.getByTestId('ctx-usage')
   await expect(bar).toHaveAttribute('data-level', 'near')
   await expect(page.getByTestId('ctx-warn')).toHaveText(zhCN.ctxNearShort)
-  expect(await bar.getAttribute('title')).toContain('3,600')
+  expect(await bar.getAttribute('data-tip')).toContain('3,600')
   await shot('context-near-limit')
   // typing pushes it over the window
   await page.locator('.composer textarea').fill(para.repeat(3))

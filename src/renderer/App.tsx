@@ -6,7 +6,7 @@ import type { RequestInfo } from '../shared/reqdebug'
 import { ProviderError, withRetry } from '../shared/errors'
 import { estimateMessages, estimateTokens } from '../shared/usage'
 import { webSearch, searchContext, SearchError, type Citation } from '../shared/websearch'
-import { convFlags, newConvFlags } from '../shared/chatflags'
+import { convFlags, newConvFlags, systemPromptFor } from '../shared/chatflags'
 import { branchAt, forkConversation, switchBranch } from '../shared/branches'
 import { makeBackup, parseBackup, restoreSettings, makeSyncPayload, mergeSync, BACKUP_KEYS } from '../shared/sync'
 import { api, storage, bridgeFetch, setRequestTimeout } from './api'
@@ -194,10 +194,10 @@ export default function App() {
           if (!provider) throw new ProviderError('bad_request', `provider ${tg.providerId} not found`)
           const res = await withRetry(() => {
             text = ''; reasoning = ''
-            return streamChat(provider, conv.systemPrompt, ctx, { model: tg.model, temperature, topP, maxTokens, signal: ctrl.signal, fetchImpl: bridgeFetch, reasoning: convFlags(conv, settings).reasoning,
+            return streamChat(provider, systemPromptFor(conv.systemPrompt, tg, settings, t), ctx, { model: tg.model, temperature, topP, maxTokens, signal: ctrl.signal, fetchImpl: bridgeFetch, reasoning: convFlags(conv, settings).reasoning,
               onReasoning: r => { reasoning += r; setMsg(aid, { reasoning }) }, onDelta: d => { text += d; setMsg(aid, { content: text }) } })
           }, { retries: settings.retries, baseMs: settings.retryBaseMs, signal: ctrl.signal }, () => !text && !reasoning)
-          setMsg(aid, { content: res.text, reasoning: res.reasoning || reasoning || undefined, usage: res.usage || { input: estimateMessages(ctx, conv.systemPrompt), output: estimateTokens(res.text + (res.reasoning || '')), estimated: true } })
+          setMsg(aid, { content: res.text, reasoning: res.reasoning || reasoning || undefined, usage: res.usage || { input: estimateMessages(ctx, systemPromptFor(conv.systemPrompt, tg, settings, t)), output: estimateTokens(res.text + (res.reasoning || '')), estimated: true } })
         } catch (e: any) {
           if (e?.name === 'AbortError') return
           const pe = e instanceof ProviderError ? e : null
@@ -235,7 +235,7 @@ export default function App() {
         const ctx = buildCtx(msgs.slice(0, -1), contextLength, s)
         const res = await withRetry(() => {
           text = ''; reasoning = ''
-          return streamChat(provider, conv.systemPrompt, ctx, {
+          return streamChat(provider, systemPromptFor(conv.systemPrompt, conv, settings, t), ctx, {
             model: conv.model, temperature, topP, maxTokens, tools: tools.length ? tools : undefined, signal: ctrl.signal, fetchImpl: bridgeFetch, reasoning: convFlags(conv, settings).reasoning,
             onRequest: r => setLastRequests(m => ({ ...m, [id]: { ...r, at: Date.now() } })),
             onReasoning: r => { reasoning += r; setMsg(aid, { reasoning, status: undefined }) },
@@ -245,7 +245,7 @@ export default function App() {
           retries: settings.retries, baseMs: settings.retryBaseMs, signal: ctrl.signal,
           onRetry: (n, delay) => setMsg(aid, { status: t.retrying.replace('{n}', String(n)).replace('{s}', (delay / 1000).toFixed(1)) }),
         }, () => !text && !reasoning)
-        const usage = res.usage || { input: estimateMessages(ctx, conv.systemPrompt), output: estimateTokens(res.text + (res.reasoning || '')), estimated: true }
+        const usage = res.usage || { input: estimateMessages(ctx, systemPromptFor(conv.systemPrompt, conv, settings, t)), output: estimateTokens(res.text + (res.reasoning || '')), estimated: true }
         const final: Message = { ...asst, content: res.text, reasoning: res.reasoning || reasoning || undefined, usage, toolCalls: res.toolCalls.length ? res.toolCalls : undefined, thinkingBlocks: res.toolCalls.length && res.thinkingBlocks?.length ? res.thinkingBlocks : undefined }
         msgs = [...msgs.slice(0, -1), final]
         patchConv(id, c => ({ ...c, messages: msgs }))
@@ -269,15 +269,18 @@ export default function App() {
       setBusyId(''); abortRef.current = null
       const c0 = convsRef.current.find(c => c.id === id)
       const isUntitled = (x: string) => x === t.untitled || x === dicts.zh.untitled || x === dicts.en.untitled
-      if (c0 && !c0.titleManual && isUntitled(c0.title)) {
+      // B9: the first-sentence title is only a placeholder (titleSource 'fallback'); the model-generated title is
+      // requested after the first *successful* reply, so a failed first attempt (e.g. HTTP 400) no longer blocks it
+      const waiting = (c: Conversation) => !c.titleManual && c.titleSource !== 'manual' && c.titleSource !== 'auto' && (isUntitled(c.title) || c.titleSource === 'fallback')
+      if (c0 && waiting(c0)) {
         const firstUser = msgs.find(m => m.role === 'user')
-        if (firstUser) patchConv(id, c => c.titleManual ? c : ({ ...c, title: firstUser.content.slice(0, 30).replace(/\s+/g, ' ') || c.title }))
-        const firstReply = msgs.find(m => m.role === 'assistant' && m.content && !m.error)
-        if (settings.autoTitle && firstUser && firstReply && msgs.filter(m => m.role === 'user').length === 1) {
-          const fallback = firstUser.content.slice(0, 30).replace(/\s+/g, ' ')
+        const fallback = firstUser ? firstUser.content.slice(0, 30).replace(/\s+/g, ' ') : ''
+        if (fallback && isUntitled(c0.title)) patchConv(id, c => waiting(c) ? ({ ...c, title: fallback, titleSource: 'fallback' }) : c)
+        const firstReply = msgs.find(m => m.role === 'assistant' && m.content && !m.error && !m.compareGroup)
+        if (settings.autoTitle && firstUser && firstReply) {
           summarizeTitle(provider, conv.model, firstUser.content, firstReply.content, t.titlePrompt, bridgeFetch).then(title => {
-            if (title) patchConv(id, c => (c.titleManual || (c.title !== fallback && !isUntitled(c.title))) ? c : { ...c, title })
-          }).catch(() => { /* keep the fallback title */ })
+            if (title) patchConv(id, c => waiting(c) ? { ...c, title, titleSource: 'auto' } : c)
+          }).catch(() => { /* keep the fallback title; retried after the next successful reply */ })
         }
       }
     }

@@ -44,11 +44,14 @@ export function ProvidersTab({ s, t, set, actions, secure }: { s: Settings; t: D
 
   const badge = (p: ProviderConfig) => {
     const st = statusOf(p)
-    const tip = st.state === 'ok' ? t.provOkTip.replace('{n}', String(st.count ?? 0)) + (st.at ? ` · ${new Date(st.at).toLocaleTimeString()}` : '')
-      : st.state === 'fail' ? `${t.provFail}: ${st.detail || ''}` : st.state === 'nokey' ? t.provNoKeyTip : st.state === 'checking' ? t.provChecking : t.provUntestedTip
+    // B7: 未配置 / 已配置 / 连接正常 / 连接失败, last test time in the tooltip, Ollama probed via /api/tags
+    const when = st.at ? '\n' + t.provLastTest.replace('{time}', new Date(st.at).toLocaleString()) : ''
+    const tip = (st.state === 'ok' ? t.provOkTip.replace('{n}', String(st.count ?? 0))
+      : st.state === 'fail' ? `${t.provFail}: ${st.detail || ''}` : st.state === 'nokey' ? t.provNoKeyTip : st.state === 'checking' ? t.provChecking : t.provConfiguredTip)
+      + when + (p.type === 'ollama' ? '\n' + t.provOllamaTip.replace('{url}', (p.baseURL || 'http://localhost:11434').replace(/\/+$/, '').replace(/\/v1$/, '')) : '')
     return <span className={'sbadge ' + st.state} data-testid={`badge-${p.id}`} data-state={st.state} data-tip={tip} aria-label={tip}>
       {st.state === 'checking' ? <Loader2 size={11} className="spin" /> : <span className="dot" />}
-      {({ ok: t.provOk, fail: t.provFail, nokey: t.provNoKey, untested: t.provUntested, checking: t.provChecking } as any)[st.state]}</span>
+      {({ ok: t.provConnected, fail: t.provFail, nokey: t.provNotConfigured, untested: t.provConfigured, checking: t.provChecking } as any)[st.state]}</span>
   }
   const shown = useMemo(() => (prov?.models || []).filter(m => m.toLowerCase().includes(filter.toLowerCase())), [prov, filter])
   const hidden = new Set(prov?.hiddenModels || [])
@@ -89,6 +92,7 @@ export function ProvidersTab({ s, t, set, actions, secure }: { s: Settings; t: D
           {st?.state === 'fail' && <><XCircle size={14} />{st.detail}</>}
           {st?.state === 'checking' && <><Loader2 size={14} className="spin" />{t.provChecking}</>}
           {st?.state === 'nokey' && t.provNoKeyTip}
+          {st?.at && st.state !== 'checking' && <span className="meta" data-testid="last-test"> · {t.provLastTest.replace('{time}', new Date(st.at).toLocaleString())}</span>}
         </span>
       </div>
 

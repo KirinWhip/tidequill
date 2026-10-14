@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, ChevronDown, Loader2, RefreshCw } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Loader2, RefreshCw } from 'lucide-react'
 import type { ProviderConfig } from '../../shared/types'
 import { listModels } from '../../shared/providers'
 import { api, bridgeFetch } from '../api'
 import { useT } from '../i18n'
+import { groupModels } from '../../shared/modelgroups'
 
 type Cache = Record<string, { models: string[]; at: number }>
 let memCache: Cache | null = null
@@ -47,7 +48,12 @@ export function ModelSelector({ providers, providerId, model, onChange }: { prov
   const all = useMemo(() => [...new Set([...(provider?.models || []), ...remote])].filter(m => !provider?.hiddenModels?.includes(m)), [provider, remote])
   const list = useMemo(() => { const s = q.trim().toLowerCase(); return s ? all.filter(m => m.toLowerCase().includes(s)) : all }, [all, q])
   const custom = q.trim() && !all.includes(q.trim()) ? q.trim() : ''
-  const options = custom ? [custom, ...list] : list
+  // B8: grouped by family, newest first; older models collapsed per family (all shown while searching)
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const groups = useMemo(() => groupModels(list, model), [list, model])
+  const searching = !!q.trim()
+  const visible = (g: { family: string; recent: string[]; older: string[] }) => searching || expanded[g.family] ? [...g.recent, ...g.older] : g.recent
+  const options = [...(custom ? [custom] : []), ...groups.flatMap(visible)]
   const pick = (m: string) => { onChange(provider.id, m); setOpen(false) }
 
   return (
@@ -75,11 +81,14 @@ export function ModelSelector({ providers, providerId, model, onChange }: { prov
         </div>
         {state === 'loading' && <div className="hint pad">{t.modelsLoading}</div>}
         {state === 'error' && <div className="hint pad warn">{t.modelsFetchFailed}</div>}
-        <div className="modellist">
-          {options.map((m, i) => <div key={m + i} role="option" aria-selected={m === model} className={'modelopt' + (i === hi ? ' hi' : '') + (m === custom ? ' custom' : '')}
-            onMouseEnter={() => setHi(i)} onClick={() => pick(m)}>
-            {m === custom ? <span>{t.useCustomModel}<b>{m}</b></span> : <span>{m}</span>}
-            {m === model && <Check size={14} />}
+        <div className="modellist" data-testid="model-list">
+          {custom && <div role="option" aria-selected={false} className={'modelopt custom' + (hi === 0 ? ' hi' : '')} onMouseEnter={() => setHi(0)} onClick={() => pick(custom)}><span>{t.useCustomModel}<b>{custom}</b></span></div>}
+          {groups.map(g => <div key={g.family} className="modelgroup" data-family={g.family || 'other'}>
+            <div className="modelgroup-head">{g.family || t.modelsOther}</div>
+            {visible(g).map(m => { const i = options.indexOf(m); return <div key={m} role="option" aria-selected={m === model} className={'modelopt' + (i === hi ? ' hi' : '')}
+              onMouseEnter={() => setHi(i)} onClick={() => pick(m)}><span>{m}</span>{m === model && <Check size={14} />}</div> })}
+            {!searching && g.older.length > 0 && <button className="modelolder" data-testid="model-older" onClick={() => setExpanded(x => ({ ...x, [g.family]: !x[g.family] }))}>
+              <ChevronRight size={12} className={expanded[g.family] ? 'rot' : ''} />{expanded[g.family] ? t.modelsHideOlder : t.modelsShowOlder.replace('{n}', String(g.older.length))}</button>}
           </div>)}
           {!options.length && state !== 'loading' && <div className="hint pad">{t.noModels}</div>}
         </div>
