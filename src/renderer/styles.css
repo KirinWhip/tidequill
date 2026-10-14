@@ -436,3 +436,6 @@ section[data-testid="grants"] > .row:last-child { margin-top: var(--space3); }
 .convbar .usage-total, .convbar .noprice { white-space: nowrap; flex: none; }
 .convbar > .linkbtn:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 [data-tip]:hover::after, [data-tip]:focus-visible::after, .sbadge[data-tip]:hover::after { white-space: pre-line; }
+/* B11: top-bar icon tooltips open toward the inside of the window; a tooltip must never make the page scroll */
+.chathead .icon-btn[data-tip]:hover::after, .chathead .icon-btn[data-tip]:focus-visible::after { left: auto; right: 0; transform: none; }
+html, body { overflow: hidden; }
