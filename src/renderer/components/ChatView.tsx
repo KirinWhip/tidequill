@@ -122,7 +122,7 @@ function groupCompare(list: Message[]): Message[][] {
 }
 
 /** Ctrl+F: highlights matches with the CSS Custom Highlight API (no DOM changes), Enter / Shift+Enter to step */
-function FindBar({ listRef, deps, onClose }: { listRef: React.RefObject<HTMLDivElement>; deps: unknown; onClose(): void }) {
+function FindBar({ listRef, deps, onClose }: { listRef: React.RefObject<HTMLDivElement | null>; deps: unknown; onClose(): void }) {
   const t = useT()
   const [q, setQ] = useState('')
   const [cur, setCur] = useState(0)
