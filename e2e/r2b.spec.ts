@@ -169,8 +169,13 @@ test('sidebar: grouped toolbox, no import/export, empty folder guidance, shortcu
 test('reading width: narrow / standard / wide; actions shown on hover', async () => {
   const long = '潮水每天涨落两次，'.repeat(40)
   ;({ app, page } = await launch(seedUserData({ mockUrl: mock.url, conversations: [C('w', '阅读宽度', [M('u', 'user', '写一段长文'), M('a', 'assistant', long)])] })))
+  // Windows CI 的屏幕工作区较小，窗口会被系统限制在约 1024 px 宽，导致 980 / 1280 两档的实际宽度都被可用宽度截断。
+  // 先尝试把窗口放大；同时直接检查计算后的 max-width，这样不受屏幕大小影响。
+  await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; w.unmaximize(); w.setSize(1700, 1000) })
   await page.locator('.conv').first().click()
   const width = () => page.locator('.msg.assistant').first().evaluate(e => e.getBoundingClientRect().width)
+  const maxW = () => page.locator('.msg.assistant').first().evaluate(e => getComputedStyle(e).maxWidth)
+  expect(await maxW()).toBe('980px')
   const w0 = await width()
   const acts = page.locator('.msg.assistant .msgacts').first()
   await page.locator('.composer textarea').hover()
@@ -183,11 +188,15 @@ test('reading width: narrow / standard / wide; actions shown on hover', async ()
     await page.locator(`.seg button[data-width="${w}"]`).click()
     await page.keyboard.press('Escape')
     widths[w] = await width()
+    expect(await maxW()).toBe(w === 'narrow' ? '720px' : '1280px')
     await page.locator('.composer textarea').hover()
     await shot(`reading-width-${w}`)
   }
   expect(widths.narrow).toBeLessThan(w0)
-  expect(widths.wide).toBeGreaterThan(w0)
+  // 只有窗口实际宽于 980 px 时，“宽”才可能比“标准”更宽
+  const avail = await page.locator('.messages, .chat').first().evaluate(e => e.clientWidth)
+  if (avail > 1000) expect(widths.wide).toBeGreaterThan(w0)
+  else expect(widths.wide).toBeGreaterThanOrEqual(w0)
 })
 
 test('context usage indicator: estimate vs model window, warning near / over the limit', async () => {
