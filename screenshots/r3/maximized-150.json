@@ -1,0 +1,59 @@
+{
+  "maximized": true,
+  "bounds": {
+    "x": -5,
+    "y": -5,
+    "width": 694,
+    "height": 492
+  },
+  "content": {
+    "x": 0,
+    "y": 0,
+    "width": 683,
+    "height": 480
+  },
+  "workArea": {
+    "x": 0,
+    "y": 0,
+    "width": 683,
+    "height": 480
+  },
+  "displayBounds": {
+    "x": 0,
+    "y": 0,
+    "width": 455,
+    "height": 341
+  },
+  "scale": 1.5,
+  "page": {
+    "inner": {
+      "w": 683,
+      "h": 480
+    },
+    "dpr": 1.5,
+    "wcoVisible": true,
+    "titlebarArea": {
+      "x": 0,
+      "y": 0,
+      "width": 546,
+      "height": 36
+    },
+    "nav": {
+      "x": 12,
+      "y": 336.91668701171875,
+      "w": 239.33334350585938,
+      "h": 131.08334350585938,
+      "bottom": 468.0000305175781,
+      "right": 251.33334350585938
+    },
+    "sidebar": {
+      "x": 0,
+      "y": 36,
+      "w": 264,
+      "h": 444,
+      "bottom": 480,
+      "right": 264
+    },
+    "composer": null
+  }
+}
