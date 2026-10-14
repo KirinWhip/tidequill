@@ -8,7 +8,7 @@ import { startMockServer, REPLY } from '../tests/mock-server.mjs'
 import { zhCN } from '../src/renderer/locales/zh-CN'
 import { en } from '../src/renderer/locales/en'
 
-const SHOTS = path.resolve(__dirname, '..', 'screenshots', 'p0')
+const SHOTS = path.resolve(__dirname, '..', 'screenshots', 'p1')
 fs.mkdirSync(SHOTS, { recursive: true })
 let mock: any
 test.beforeAll(async () => { mock = await startMockServer() })
@@ -133,7 +133,7 @@ test('export JSON and import it back', async () => {
   // markdown export of the current conversation
   const md = out.replace('.json', '.md')
   await app.evaluate(({ dialog }, p) => { (dialog as any).showSaveDialog = async () => ({ canceled: false, filePath: p }) }, md)
-  await page.getByRole('button', { name: zhCN.exportMdShort }).click()
+  await page.getByRole('button', { name: zhCN.exportMd, exact: true }).click()
   await expect.poll(() => fs.existsSync(md) && fs.readFileSync(md, 'utf8')).toContain('## User')
   // delete conversation, then import
   page.once('dialog', d => d.accept())
@@ -175,6 +175,9 @@ const demoAnswer = (zh: boolean) => [
   '  return [...quickSort(rest.filter(x => x < p)), p, ...quickSort(rest.filter(x => x >= p))]', '}', '```', '',
   zh ? '平均复杂度 $O(n \\log n)$，最坏情况：' : 'Average $O(n \\log n)$, worst case:', '', '$$T(n) = T(n-1) + O(n) = O(n^2)$$', '',
   '```mermaid', 'graph LR', zh ? '  A[选择基准] --> B[分区]' : '  A[Pick pivot] --> B[Partition]', zh ? '  B --> C[递归左侧]' : '  B --> C[Recurse left]', zh ? '  B --> D[递归右侧]' : '  B --> D[Recurse right]', '```',
+  '', zh ? '| 算法 | 平均 | 最坏 | 稳定 |' : '| Algorithm | Average | Worst | Stable |', '|---|---|---|---|',
+  zh ? '| 快速排序 | O(n log n) | O(n²) | 否 |' : '| Quicksort | O(n log n) | O(n²) | No |', zh ? '| 归并排序 | O(n log n) | O(n log n) | 是 |' : '| Merge sort | O(n log n) | O(n log n) | Yes |',
+  zh ? '| 堆排序 | O(n log n) | O(n log n) | 否 |' : '| Heapsort | O(n log n) | O(n log n) | No |',
   '', '<img src=x onerror="document.title=\'XSS\'">',
 ].join('\n')
 const demoConvs = (zh: boolean) => {
@@ -199,5 +202,173 @@ for (const theme of ['light', 'dark'] as const) for (const lang of ['zh', 'en'] 
     expect(await page.locator('.bubble img[src="x"]').count()).toBe(0)
     expect(consoleErrors.filter(e => /Content Security Policy/i.test(e))).toEqual([])
     await page.screenshot({ path: path.join(SHOTS, `${theme}-${lang}.png`) })
+    if (theme === 'light' && lang === 'zh') {
+      // let the page grow so the whole bubble can be captured (test-only style, CSP allows inline styles)
+      await page.addStyleTag({ content: '.app,.chat{height:auto!important}.messages{overflow:visible!important}.composer{display:none}' })
+      await page.waitForTimeout(500)
+      await page.locator('.msg.assistant .bubble').first().screenshot({ path: path.join(SHOTS, 'closeup-code-table-mermaid.png') })
+    }
   })
 }
+
+// ---------- P1 UI ----------
+const codeConv = () => {
+  const now = Date.now()
+  const code = ['```python', 'def fib(n):', '    a, b = 0, 1', '    for _ in range(n):', '        a, b = b, a + b', '    return a', '```'].join('\n')
+  const body = ['示例：', '', code, '', '| 列A | 列B |', '|---|---|', '| 1 | 2 |', '| 3 | 4 |', '| 5 | 6 |', '', '```mermaid', 'graph TD', '  A[开始] --> B[结束]', '```'].join('\n')
+  return [{ id: 'k1', title: '代码示例', pinned: false, providerId: 'mock', model: 'mock-ok', systemPrompt: '', createdAt: now, updatedAt: now,
+    messages: [{ id: 'u1', role: 'user', content: '给个例子', createdAt: now }, { id: 'a1', role: 'assistant', content: body, model: 'mock-ok', createdAt: now }] }]
+}
+const clipboard = () => app.evaluate(({ clipboard }) => clipboard.readText())
+
+test('stop button interrupts a streaming reply', async () => {
+  await start({ model: 'mock-slow' })
+  await newChatAndSend('长回复')
+  const stop = page.getByRole('button', { name: zhCN.stop, exact: true })
+  await expect(stop).toBeVisible()
+  await expect(page.locator('.msg.assistant .bubble').last()).toContainText('chunk2')
+  await stop.click()
+  await expect(page.getByRole('button', { name: zhCN.send, exact: true })).toBeVisible()
+  const txt = await page.locator('.msg.assistant .bubble').last().innerText()
+  await page.waitForTimeout(800)
+  expect(await page.locator('.msg.assistant .bubble').last().innerText()).toBe(txt) // no more chunks after stop
+  expect(txt).not.toContain('chunk59')
+  await expect(page.locator('.msg.assistant .error')).toHaveCount(0)
+})
+
+test('model selector: search fetched models, pick one, type a custom model', async () => {
+  await start()
+  await page.getByRole('button', { name: new RegExp(zhCN.newChat) }).first().click()
+  await page.locator('.modelbtn').click()
+  const search = page.getByPlaceholder(zhCN.modelSearch)
+  await expect(search).toBeFocused()
+  await expect(page.locator('.modelopt', { hasText: 'claude-mock' })).toBeVisible() // fetched from mock /v1/models
+  await search.fill('gpt-4o')
+  await expect(page.locator('.modelopt')).toHaveCount(2) // custom "gpt-4o" + gpt-4o-mock
+  const pb = (await page.locator('.modelpop').boundingBox())!
+  const sb = (await page.locator('.modelsel').boundingBox())!
+  const x0 = Math.max(0, Math.min(pb.x, sb.x) - 16)
+  await page.screenshot({ path: path.join(SHOTS, 'closeup-model-selector-open.png'), clip: { x: x0, y: 0, width: Math.min(1024 - x0, Math.max(pb.x + pb.width, sb.x + sb.width) - x0 + 16), height: pb.y + pb.height + 16 } })
+  await page.locator('.modelopt', { hasText: 'gpt-4o-mock' }).click()
+  await expect(page.locator('.modelbtn')).toContainText('gpt-4o-mock')
+  // custom model name
+  await page.locator('.modelbtn').click()
+  await page.getByPlaceholder(zhCN.modelSearch).fill('my-custom-model')
+  await expect(page.locator('.modelopt.custom')).toContainText(zhCN.useCustomModel + 'my-custom-model')
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.modelbtn')).toContainText('my-custom-model')
+  // list is cached on disk
+  await expect.poll(() => fs.existsSync(path.join(ud, 'data', 'modelCache.json'))).toBe(true)
+  expect(fs.readFileSync(path.join(ud, 'data', 'modelCache.json'), 'utf8')).toContain('claude-mock')
+})
+
+test('deep thinking toggle sends reasoning and shows collapsible reasoning', async () => {
+  await start()
+  await page.getByRole('button', { name: new RegExp(zhCN.newChat) }).first().click()
+  const toggle = page.getByRole('button', { name: zhCN.reasoning, exact: true })
+  await expect(toggle).toHaveAttribute('title', zhCN.reasoningTip)
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+  await send(page, '思考一下')
+  const r = page.locator('.msg.assistant .reasoning')
+  await expect(r.locator('summary')).toContainText(zhCN.reasoningContent, { timeout: 10_000 })
+  await expect(page.locator('.msg.assistant .bubble').last()).toContainText(REPLY.join('').trim())
+  await r.locator('summary').click()
+  await expect(r.locator('.reasoning-body')).toContainText('先分析问题')
+})
+
+test('message hover actions: timestamp, model, copy, read aloud', async () => {
+  await start()
+  await newChatAndSend('hover 测试')
+  await expect(page.locator('.msg.assistant .bubble').last()).toContainText(REPLY.join('').trim())
+  const msg = page.locator('.msg.assistant').last()
+  const acts = msg.locator('.msgacts')
+  expect(await acts.evaluate(el => getComputedStyle(el).opacity)).toBe('0')
+  await msg.hover()
+  await expect.poll(() => acts.evaluate(el => getComputedStyle(el).opacity)).toBe('1')
+  await expect(acts.locator('.meta')).toContainText('mock-ok')
+  for (const n of [zhCN.copy, zhCN.regenerate, zhCN.readAloud, zhCN.delete]) await expect(acts.getByRole('button', { name: n, exact: true })).toBeVisible()
+  const userActs = page.locator('.msg.user').last().locator('.msgacts')
+  await page.locator('.msg.user').last().hover()
+  await expect(userActs.getByRole('button', { name: zhCN.edit, exact: true })).toBeVisible()
+  await msg.hover()
+  await acts.getByRole('button', { name: zhCN.copy, exact: true }).click()
+  expect(await clipboard()).toBe(REPLY.join(''))
+  await expect(acts.getByRole('button', { name: zhCN.copy, exact: true })).toHaveAttribute('title', zhCN.copied)
+  await msg.screenshot({ path: path.join(SHOTS, 'closeup-message-hover-actions.png') })
+  // read aloud toggles to "stop reading" while speaking (speechSynthesis may be unavailable on CI voices; only check the toggle when it starts)
+  const hasVoices = await page.evaluate(() => 'speechSynthesis' in window)
+  expect(hasVoices).toBe(true)
+})
+
+test('code block copy feedback, table zebra, mermaid toolbar (zoom/copy/download)', async () => {
+  await start({ conversations: codeConv() })
+  const cb = page.locator('.codeblock').first()
+  await expect(cb.locator('.lang')).toHaveText('python')
+  await cb.locator('.copybtn').click()
+  await expect(cb.locator('.copybtn')).toContainText(zhCN.copied)
+  expect(await clipboard()).toContain('def fib(n):')
+  await expect(cb.locator('.copybtn')).toContainText(zhCN.copy, { timeout: 3000 })
+  // zebra stripes + borders
+  const rows = page.locator('.bubble tbody tr')
+  const bg1 = await rows.nth(0).evaluate(el => getComputedStyle(el).backgroundColor)
+  const bg2 = await rows.nth(1).evaluate(el => getComputedStyle(el).backgroundColor)
+  expect(bg1).not.toBe(bg2)
+  expect(await page.locator('.bubble td').first().evaluate(el => getComputedStyle(el).borderBottomStyle)).toBe('solid')
+  // mermaid
+  await expect(page.locator('.mermaid svg')).toContainText('开始')
+  await page.getByRole('button', { name: zhCN.mermaidCopy }).click()
+  expect(await clipboard()).toContain('graph TD')
+  await page.getByRole('button', { name: zhCN.mermaidZoom }).click()
+  await expect(page.locator('.zoombox .mermaid svg')).toBeVisible()
+  await page.locator('.zoombox').getByRole('button', { name: zhCN.close }).click()
+  await expect(page.locator('.zoombox')).toHaveCount(0)
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'svg-')), 'diagram.svg')
+  await app.evaluate(({ session }, p) => { session.defaultSession.once('will-download', (_e, item) => item.setSavePath(p)) }, out)
+  await page.getByRole('button', { name: zhCN.mermaidDownload }).click()
+  await expect.poll(() => fs.existsSync(out) && fs.readFileSync(out, 'utf8'), { timeout: 10_000 }).toContain('<svg')
+  expect(fs.readFileSync(out, 'utf8')).not.toContain('<script')
+})
+
+test('line numbers and long-code collapse follow settings', async () => {
+  const conv = codeConv()
+  conv[0].messages[1].content = '```js\n' + Array.from({ length: 40 }, (_, i) => `console.log(${i})`).join('\n') + '\n```'
+  await start({ conversations: conv })
+  const cb = page.locator('.codeblock').first()
+  await expect(cb).toHaveClass(/collapsed/)
+  await cb.locator('.codetoggle').click()
+  await expect(cb).not.toHaveClass(/collapsed/)
+  await expect(cb.locator('.gutter')).toHaveCount(0)
+  await page.keyboard.press('Control+,')
+  await page.getByRole('button', { name: zhCN.general, exact: true }).click()
+  await page.getByLabel(zhCN.codeLineNumbers).check()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.codeblock .gutter div')).toHaveCount(40)
+})
+
+test('input toolbar: attachments as thumbnail/chip with remove, tools toggle, params popover', async () => {
+  await start()
+  await page.getByRole('button', { name: new RegExp(zhCN.newChat) }).first().click()
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'att-'))
+  const txt = path.join(dir, 'notes.txt'); fs.writeFileSync(txt, '附件内容 hello')
+  const png = path.join(dir, 'pic.png')
+  fs.writeFileSync(png, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'))
+  await page.locator('.composer input[type=file]').setInputFiles([txt, png])
+  await expect(page.locator('.composer .filechip', { hasText: 'notes.txt' })).toBeVisible()
+  await expect(page.locator('.composer .filechip')).toHaveCount(1) // parsing indicator gone
+  await expect(page.locator('.composer .thumb img')).toHaveCount(1)
+  await page.locator('.composer textarea').fill('带附件的消息')
+  const tools = page.getByRole('button', { name: zhCN.toolsToggle, exact: true })
+  await expect(tools).toHaveAttribute('aria-pressed', 'true')
+  await page.locator('.composer').screenshot({ path: path.join(SHOTS, 'closeup-input-toolbar.png') })
+  await tools.click()
+  await expect(tools).toHaveAttribute('aria-pressed', 'false')
+  await page.getByRole('button', { name: zhCN.params, exact: true }).click()
+  await expect(page.locator('.parampop')).toContainText(zhCN.temperature)
+  await page.locator('.composer textarea').click()
+  await expect(page.locator('.parampop')).toHaveCount(0)
+  await page.locator('.composer .filechip').getByRole('button', { name: zhCN.removeItem }).click()
+  await expect(page.locator('.composer .filechip')).toHaveCount(0)
+  await page.locator('.composer .thumb').getByRole('button', { name: zhCN.removeItem }).click()
+  await expect(page.locator('.composer .thumb')).toHaveCount(0)
+})

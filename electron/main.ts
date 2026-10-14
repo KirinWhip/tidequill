@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, session, shell, Menu, net, safeStorage } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, session, shell, Menu, net, safeStorage, clipboard } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import { ToolManager } from './tools'
@@ -8,7 +8,7 @@ import { mainStrings, type MainLang } from './i18n'
 
 if (process.env.CHATBOX_USER_DATA) app.setPath('userData', process.env.CHATBOX_USER_DATA)
 
-const ALLOWED_KEYS = new Set(['settings', 'conversations', 'personas', 'prompts', 'gallery'])
+const ALLOWED_KEYS = new Set(['settings', 'conversations', 'personas', 'prompts', 'gallery', 'modelCache'])
 const dataDir = () => path.join(app.getPath('userData'), 'data')
 const fileFor = (k: string) => path.join(dataDir(), k + '.json')
 const allowFile = () => path.join(app.getPath('userData'), 'tool-allowlist.json')
@@ -75,6 +75,8 @@ app.whenReady().then(() => {
   ipcMain.handle('app:locale', () => app.getLocale())
   ipcMain.handle('app:setLanguage', (_e, l: string) => { lang = l === 'en' ? 'en' : 'zh' })
   ipcMain.handle('app:version', () => app.getVersion())
+  // clipboard write goes through main (renderer permission requests are all denied)
+  ipcMain.handle('clipboard:write', (_e, text: string) => { clipboard.writeText(String(text).slice(0, 5_000_000)) })
 
   // ---- HTTP bridge (provider requests go through main, renderer keeps webSecurity on) ----
   ipcMain.on('http:start', (e, id: string, req: BridgeRequest) => {

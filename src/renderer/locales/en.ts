@@ -38,4 +38,12 @@ export const en: Dict = {
   defaultPrompt_summary: 'Summarize', defaultPrompt_summary_c: 'Summarize the following as bullet points:\n',
   defaultPrompt_polish: 'Polish', defaultPrompt_polish_c: 'Polish the following text to be fluent and professional:\n',
   defaultPrompt_explain: 'Explain code', defaultPrompt_explain_c: 'Explain the following code line by line:\n',
+  reasoning: 'Deep thinking', reasoningTip: 'Deep thinking / reasoning: sends reasoning_effort=high to OpenAI-compatible APIs, enables Claude extended thinking and Gemini thinking; the reasoning is shown in a collapsible block. May fail on models that do not support it.',
+  reasoningContent: 'Reasoning', reasoningRunning: 'Thinking…',
+  modelSearch: 'Search or type a model name…', useCustomModel: 'Use custom model: ', modelsLoading: 'Fetching models…', modelsRefresh: 'Refresh model list',
+  modelsFetchFailed: 'Could not fetch models; you can type a model name', noModels: 'No matching models', modelsFromCache: 'Cached model list',
+  params: 'Model parameters', toolsToggle: 'Tools', toolsToggleTip: 'Allow the model to call plugins and MCP tools (each call needs confirmation)',
+  readAloud: 'Read aloud', stopReading: 'Stop reading', close: 'Close', more: 'More',
+  codeLineNumbers: 'Show line numbers in code blocks', codeCollapseLines: 'Collapse code longer than N lines (0 = never)', expandCode: 'Expand all', collapseCode: 'Collapse', lines: 'lines',
+  image: 'Image', mermaidLabel: 'Mermaid diagram', mermaidZoom: 'Zoom', mermaidCopy: 'Copy source', mermaidDownload: 'Download SVG', display: 'Display',
 }

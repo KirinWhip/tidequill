@@ -19,6 +19,7 @@ const api = {
   toolAllowlist: () => ipcRenderer.invoke('tools:allowlist'),
   revokeTool: (name: string) => ipcRenderer.invoke('tools:revoke', name),
   openPluginDir: () => ipcRenderer.invoke('plugins:openDir'),
+  copyText: (text: string) => ipcRenderer.invoke('clipboard:write', text),
   version: () => ipcRenderer.invoke('app:version'),
   httpStart: (id: string, req: any, onEvent: (ev: any) => void) => { httpListeners.set(id, onEvent); ipcRenderer.send('http:start', id, req) },
   httpAbort: (id: string) => ipcRenderer.send('http:abort', id),

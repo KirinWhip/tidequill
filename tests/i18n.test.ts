@@ -14,7 +14,7 @@ const uiFiles = [...walk('src/renderer'), ...walk('electron')]
 const tsxFiles = uiFiles.filter(f => f.endsWith('.tsx'))
 const stripComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
 // tokens that are not translatable words (symbols, key names inside template literals, etc.)
-const ALLOWED_TEXT = new Set(['✓', '⧉', '✕', '✎', '📌', '🗑', '⤓', '＋', '■', '➤', '💬', '🧠', '📎', '📚', '🎭', '🎨', '🧩', '📥', '📤', '⚙️', '🔧', '📄', '⚠', '🧑', '🤖', '▍'])
+const ALLOWED_TEXT = new Set<string>([])
 
 describe('i18n', () => {
   it('language packs have identical keys and no empty values', () => {
@@ -46,6 +46,14 @@ describe('i18n', () => {
       for (const m of src.matchAll(/\b(placeholder|title|aria-label|alt|label|checkboxLabel)="([^"]*)"/g)) if (/[A-Za-z]{2,}/.test(m[2])) bad.push(`${f}: ${m[1]}="${m[2]}"`)
       for (const m of src.matchAll(/\b(alert|confirm|prompt)\(\s*(['"`])([A-Za-z][^'"`]*)\2/g)) bad.push(`${f}: ${m[1]}(${m[3]})`)
     }
+    expect(bad).toEqual([])
+  })
+
+  it('no emoji / pictographic icons in UI (Lucide icons only)', () => {
+    const bad: string[] = []
+    for (const f of uiFiles) stripComments(fs.readFileSync(f, 'utf8')).split('\n').forEach((l, i) => {
+      if (/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2300}-\u{23FF}\u{25A0}-\u{25FF}\u{2B00}-\u{2BFF}＋]/u.test(l)) bad.push(`${f}:${i + 1}: ${l.trim()}`)
+    })
     expect(bad).toEqual([])
   })
 

@@ -28,7 +28,7 @@ export function defaultSettings(): Settings {
     ],
     defaultProviderId: 'openai', defaultModel: 'gpt-4o-mini',
     imageProviderId: 'openai', imageModel: 'dall-e-3',
-    mcpServers: [], toolsEnabled: true,
+    mcpServers: [], toolsEnabled: true, codeLineNumbers: false, codeCollapseLines: 30,
   }
 }
 

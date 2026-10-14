@@ -38,5 +38,13 @@ export const zhCN = {
   defaultPrompt_summary: '总结', defaultPrompt_summary_c: '请用要点总结以下内容：\n',
   defaultPrompt_polish: '润色', defaultPrompt_polish_c: '请润色以下文字，使其更流畅专业：\n',
   defaultPrompt_explain: '解释代码', defaultPrompt_explain_c: '请逐行解释以下代码：\n',
+  reasoning: '深度思考', reasoningTip: '深度思考/推理：OpenAI 兼容接口发送 reasoning_effort=high，Claude 启用 extended thinking，Gemini 启用 thinking；思考过程可折叠查看。模型不支持时可能报错。',
+  reasoningContent: '思考过程', reasoningRunning: '思考中…',
+  modelSearch: '搜索或输入模型名…', useCustomModel: '使用自定义模型：', modelsLoading: '正在获取模型列表…', modelsRefresh: '刷新模型列表',
+  modelsFetchFailed: '获取模型列表失败，可直接输入模型名', noModels: '没有匹配的模型', modelsFromCache: '已缓存的模型列表',
+  params: '模型参数', toolsToggle: '工具', toolsToggleTip: '允许模型调用插件和 MCP 工具（每次调用都需要确认）',
+  readAloud: '朗读', stopReading: '停止朗读', close: '关闭', more: '更多',
+  codeLineNumbers: '代码块显示行号', codeCollapseLines: '代码超过多少行时折叠（0 为不折叠）', expandCode: '展开全部', collapseCode: '收起', lines: '行',
+  image: '图片', mermaidLabel: 'Mermaid 图表', mermaidZoom: '放大查看', mermaidCopy: '复制源码', mermaidDownload: '下载 SVG', display: '显示',
 }
 export type Dict = typeof zhCN

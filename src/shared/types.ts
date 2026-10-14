@@ -32,6 +32,7 @@ export interface Message {
   model?: string
   error?: string
   errorCode?: string
+  reasoning?: string
   createdAt: number
 }
 
@@ -43,6 +44,7 @@ export interface Conversation {
   model: string
   systemPrompt: string
   pinned: boolean
+  reasoning?: boolean // deep thinking toggle
   createdAt: number
   updatedAt: number
 }
@@ -94,6 +96,8 @@ export interface Settings {
   imageModel: string
   mcpServers: McpServerConfig[]
   toolsEnabled: boolean
+  codeLineNumbers: boolean
+  codeCollapseLines: number // collapse code blocks longer than this (0 = never)
 }
 
 export interface ToolDef {

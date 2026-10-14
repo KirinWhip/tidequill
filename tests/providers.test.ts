@@ -51,6 +51,41 @@ describe('request builders', () => {
   })
 })
 
+describe('reasoning / deep thinking', () => {
+  const r = { ...opts, reasoning: true, tools: undefined }
+  it('openai sends reasoning_effort, deepseek does not', () => {
+    expect(buildRequest(P('openai'), '', msgs, r).body.reasoning_effort).toBe('high')
+    expect(buildRequest(P('openai'), '', msgs, { ...r, model: 'deepseek-reasoner' }).body.reasoning_effort).toBeUndefined()
+    expect(buildRequest(P('openai'), '', msgs, opts).body.reasoning_effort).toBeUndefined()
+  })
+  it('anthropic enables extended thinking without temperature', () => {
+    const b = buildRequest(P('anthropic'), '', msgs, r).body
+    expect(b.thinking.type).toBe('enabled'); expect(b.temperature).toBeUndefined()
+    expect(b.max_tokens).toBeGreaterThan(b.thinking.budget_tokens)
+  })
+  it('gemini includes thoughts', () => {
+    expect(buildRequest(P('gemini'), '', msgs, r).body.generationConfig.thinkingConfig).toEqual({ includeThoughts: true })
+  })
+  it('collects reasoning from openai/deepseek, anthropic and gemini streams', () => {
+    const a = createAccumulator('openai')
+    a.feed(JSON.stringify({ choices: [{ delta: { reasoning_content: 'think ' } }] })); a.feed(JSON.stringify({ choices: [{ delta: { content: 'ans' } }] }))
+    expect(a.result()).toMatchObject({ text: 'ans', reasoning: 'think ' })
+    const b = createAccumulator('anthropic')
+    b.feed(JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'hmm' } }))
+    expect(b.result().reasoning).toBe('hmm')
+    const g = createAccumulator('gemini')
+    g.feed(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'idea', thought: true }, { text: 'out' }] } }] }))
+    expect(g.result()).toMatchObject({ text: 'out', reasoning: 'idea' })
+  })
+  it('streams reasoning via onReasoning callback', async () => {
+    const got: string[] = []
+    const res = await streamChat(P('openai'), '', msgs, { ...r, onReasoning: x => got.push(x), fetchImpl: async () => sseResponse([
+      JSON.stringify({ choices: [{ delta: { reasoning_content: 'a' } }] }), JSON.stringify({ choices: [{ delta: { reasoning_content: 'b' } }] }), JSON.stringify({ choices: [{ delta: { content: 'c' } }] }), '[DONE]'])
+    })
+    expect(got).toEqual(['a', 'b']); expect(res.reasoning).toBe('ab'); expect(res.text).toBe('c')
+  })
+})
+
 describe('stream parsing', () => {
   it('openai text + tool calls', async () => {
     const deltas: string[] = []

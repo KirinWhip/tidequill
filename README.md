@@ -4,9 +4,9 @@
 
 | 浅色 · 中文 | 深色 · 中文 |
 |---|---|
-| ![](screenshots/p0/light-zh.png) | ![](screenshots/p0/dark-zh.png) |
+| ![](screenshots/p1/light-zh.png) | ![](screenshots/p1/dark-zh.png) |
 | **浅色 · English** | **深色 · English** |
-| ![](screenshots/p0/light-en.png) | ![](screenshots/p0/dark-en.png) |
+| ![](screenshots/p1/light-en.png) | ![](screenshots/p1/dark-en.png) |
 
 ## 功能
 
@@ -39,6 +39,15 @@
 - **快捷键**：`Ctrl+N` 新建对话，`Ctrl+K` 搜索，`Ctrl+,` 设置，`Esc` 关闭弹窗，`F12` 开发者工具。
 
 数据保存在 `%APPDATA%\ChatBox Clone\data\*.json`（Windows），插件在 `%APPDATA%\ChatBox Clone\plugins`。
+
+## 界面（v0.3.0）
+
+- 全部图标使用 Lucide（导入/导出使用不同图标）；设计令牌（颜色、圆角、间距、字号）统一定义在 `src/renderer/theme/tokens.ts`，浅色/深色/跟随系统，所有文字配色对通过 WCAG AA（`tests/contrast.test.ts` 自动检查）。
+- 顶部模型选择：提供方下拉 + 可搜索的模型下拉框，自动拉取 `/v1/models`（或各厂商等价接口）并缓存 24 小时，可直接输入自定义模型名。
+- “深度思考”开关：OpenAI 兼容接口发送 `reasoning_effort=high`，Claude 启用 extended thinking，Gemini 启用 thinking；返回的思考过程（`reasoning_content` / thinking / thought）以可折叠块显示。
+- 输入区：输入框下方工具栏（附件、提示词库、模型参数弹层、工具开关），右侧发送按钮生成中变为“停止”；图片附件显示缩略图、文件显示标签，均可移除。
+- 消息：图标头像；悬停显示时间、模型名以及复制/编辑/重新生成/朗读（speechSynthesis）/删除。
+- 代码块：语言标签、复制按钮（“已复制”反馈）、可选行号、长代码折叠；表格带边框和斑马纹；Mermaid 带内边距、放大查看、复制源码、下载 SVG。
 
 ## 安全设计
 
@@ -77,7 +86,7 @@ npm run pack:linux-dir && ./scripts/e2e-linux.sh   # Linux（Xvfb + gnome-keyrin
 npm run dist:win && npx playwright test            # Windows
 ```
 
-覆盖：启动与安全配置、明文密钥迁移、新建对话 + 流式回复、401 / 429 / 超时 / 中途断开 / 网络不可达的本地化错误提示、主题与语言切换（含重启后保持）、JSON/Markdown 导出与导入、工具调用确认（拒绝 / 始终允许）、四种主题×语言截图。报告输出到 `playwright-report/index.html`，截图在 `screenshots/p0/`。
+覆盖：停止生成、模型搜索与自定义模型、深度思考、消息悬停操作、代码复制反馈/行号/折叠、表格斑马纹、Mermaid 工具栏、附件标签移除；启动与安全配置、明文密钥迁移、新建对话 + 流式回复、401 / 429 / 超时 / 中途断开 / 网络不可达的本地化错误提示、主题与语言切换（含重启后保持）、JSON/Markdown 导出与导入、工具调用确认（拒绝 / 始终允许）、四种主题×语言截图。报告输出到 `playwright-report/index.html`，截图在 `screenshots/p1/`。
 
 ## 持续集成
 
@@ -93,8 +102,8 @@ npm run dist:linux   # Linux AppImage
 在 Windows 上直接运行 `npm run dist:win` 即可。在 Linux 上交叉打包 Windows 需要安装 wine（`sudo apt install wine`）。
 
 产物（release/ 目录）：
-- `ChatBox Clone-Setup-0.2.0-x64.exe` — 安装程序（可选择安装目录，中文界面）
-- `ChatBox Clone-0.2.0-portable.exe` — 便携版，免安装
+- `ChatBox Clone-Setup-0.3.0-x64.exe` — 安装程序（可选择安装目录，中文界面）
+- `ChatBox Clone-0.3.0-portable.exe` — 便携版，免安装
 
 > 安装包未签名，首次运行时 Windows SmartScreen 可能提示「未知发布者」，点「更多信息 → 仍要运行」即可。
 

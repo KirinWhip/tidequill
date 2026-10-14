@@ -1,7 +1,7 @@
 {
   "name": "chatbox-clone",
   "productName": "ChatBox Clone",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "桌面 AI 聊天客户端",
   "author": "追逐 常",
   "main": "dist-electron/main.js",
@@ -51,7 +51,15 @@
       ],
       "executableName": "chatbox-clone",
       "category": "Utility"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "KirinWhip",
+        "repo": "chatbox-clone",
+        "releaseType": "release"
+      }
+    ]
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
@@ -68,6 +76,7 @@
     "esbuild": "^0.28.2",
     "highlight.js": "^11.12.0",
     "katex": "^0.19.0",
+    "lucide-react": "^1.56.0",
     "mammoth": "^1.13.0",
     "mermaid": "^11.17.2",
     "pdfjs-dist": "^4.10.38",
@@ -82,5 +91,9 @@
     "vite": "^5.4.21",
     "vitest": "^2.1.9",
     "wait-on": "^9.5.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KirinWhip/chatbox-clone.git"
   }
 }

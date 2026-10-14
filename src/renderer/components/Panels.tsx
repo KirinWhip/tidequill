@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Plus, Check, XCircle, Download, Trash2, Loader2 } from 'lucide-react'
 import type { GalleryImage, McpServerConfig, Persona, PromptItem, ProviderConfig, Settings } from '../../shared/types'
 import type { Dict } from '../i18n'
 import { uid } from '../../shared/storage'
@@ -14,7 +15,7 @@ export function SettingsPanel({ s, t, onChange }: { s: Settings; t: Dict; onChan
   const setProv = (id: string, p: Partial<ProviderConfig>) => set({ providers: s.providers.map(x => x.id === id ? { ...x, ...p } : x) })
   const [sel, setSel] = useState(s.providers[0]?.id)
   const prov = s.providers.find(p => p.id === sel)
-  const [msg, setMsg] = useState('')
+  const [msg, setMsg] = useState<any>('')
   const [secure, setSecure] = useState(true)
   useEffect(() => { api.secureStatus().then((r: any) => setSecure(!!r.available)) }, [])
   return (
@@ -23,8 +24,8 @@ export function SettingsPanel({ s, t, onChange }: { s: Settings; t: Dict; onChan
       <div className="tabs">{(['providers', 'chat', 'general', 'shortcuts'] as const).map(k => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{t[k]}</button>)}</div>
       {tab === 'providers' && <div className="split">
         <div className="plist">
-          {s.providers.map(p => <div key={p.id} className={'pitem' + (p.id === sel ? ' on' : '')} onClick={() => setSel(p.id)}>{p.name} <small>{p.apiKey || p.type === 'ollama' ? '✓' : ''}</small></div>)}
-          <button onClick={() => { const id = uid(); set({ providers: [...s.providers, { id, name: t.customProvider, type: 'openai', apiKey: '', baseURL: 'https://', models: [] }] }); setSel(id) }}>＋ {t.addProvider}</button>
+          {s.providers.map(p => <div key={p.id} className={'pitem' + (p.id === sel ? ' on' : '')} onClick={() => setSel(p.id)}>{p.name} {(p.apiKey || p.type === 'ollama') && <Check size={13} className="ok-icon" aria-label={t.apiKey} />}</div>)}
+          <button onClick={() => { const id = uid(); set({ providers: [...s.providers, { id, name: t.customProvider, type: 'openai', apiKey: '', baseURL: 'https://', models: [] }] }); setSel(id) }}><Plus size={14} />{t.addProvider}</button>
         </div>
         {prov && <div className="form">
           <label>{t.name}<input value={prov.name} onChange={e => setProv(prov.id, { name: e.target.value })} /></label>
@@ -34,7 +35,7 @@ export function SettingsPanel({ s, t, onChange }: { s: Settings; t: Dict; onChan
           <label>{t.baseURL}<input value={prov.baseURL} onChange={e => setProv(prov.id, { baseURL: e.target.value })} /></label>
           <label>{t.models}<textarea rows={3} value={prov.models.join(', ')} onChange={e => setProv(prov.id, { models: e.target.value.split(/[,\n]/).map(x => x.trim()).filter(Boolean) })} /></label>
           <div className="row">
-            <button onClick={async () => { setMsg('...'); try { const m = await listModels(prov, bridgeFetch); setProv(prov.id, { models: m }); setMsg(`✓ ${m.length}`) } catch (e: any) { setMsg('✗ ' + errText(t, e)) } }}>{t.fetchModels}</button>
+            <button onClick={async () => { setMsg(<Loader2 size={14} className="spin" />); try { const m = await listModels(prov, bridgeFetch); setProv(prov.id, { models: m }); setMsg(<span className="okmsg"><Check size={14} />{m.length}</span>) } catch (e: any) { setMsg(<span className="errmsg"><XCircle size={14} />{errText(t, e)}</span>) } }}>{t.fetchModels}</button>
             <button className="danger" onClick={() => { set({ providers: s.providers.filter(x => x.id !== prov.id) }); setSel(s.providers[0]?.id) }}>{t.delete}</button>
             <span>{msg}</span>
           </div>
@@ -53,6 +54,8 @@ export function SettingsPanel({ s, t, onChange }: { s: Settings; t: Dict; onChan
         <label>{t.language}<select value={s.language} onChange={e => set({ language: e.target.value as any })}><option value="system">{t.langSystem}</option><option value="zh">{t.langZh}</option><option value="en">{t.langEn}</option></select></label>
         <label>{t.theme}<select value={s.theme} onChange={e => set({ theme: e.target.value as any })}><option value="system">{t.system}</option><option value="light">{t.light}</option><option value="dark">{t.dark}</option></select></label>
         <label>{t.fontSize}: {s.fontSize}px<input type="range" min={12} max={22} value={s.fontSize} onChange={e => set({ fontSize: +e.target.value })} /></label>
+        <label className="check"><input type="checkbox" checked={s.codeLineNumbers} onChange={e => set({ codeLineNumbers: e.target.checked })} /> {t.codeLineNumbers}</label>
+        <label>{t.codeCollapseLines}<input type="number" min={0} value={s.codeCollapseLines} onChange={e => set({ codeCollapseLines: +e.target.value })} /></label>
         <label>{t.proxy}<input value={s.proxy} placeholder={t.proxyExample} onChange={e => set({ proxy: e.target.value })} /></label>
       </div>}
       {tab === 'shortcuts' && <div className="form">
@@ -71,7 +74,7 @@ function ListEditor<T extends { id: string }>({ title, list, onChange, fields, t
   return (
     <div className="panel">
       <h2>{title}</h2>
-      <button className="primary" onClick={() => setEdit({ id: uid(), ...Object.fromEntries(fields.map(f => [f[0], ''])) } as any)}>＋ {t.add}</button>
+      <button className="primary" onClick={() => setEdit({ id: uid(), ...Object.fromEntries(fields.map(f => [f[0], ''])) } as any)}><Plus size={14} />{t.add}</button>
       {edit && <div className="form card">
         {fields.map(([k, label, multi]) => <label key={String(k)}>{label}{multi ? <textarea rows={5} value={String(edit[k] ?? '')} onChange={e => setEdit({ ...edit, [k]: e.target.value })} /> : <input value={String(edit[k] ?? '')} onChange={e => setEdit({ ...edit, [k]: e.target.value })} />}</label>)}
         <div className="row"><button className="primary" onClick={() => { onChange(list.some(x => x.id === edit.id) ? list.map(x => x.id === edit.id ? edit : x) : [...list, edit]); setEdit(null) }}>{t.save}</button><button onClick={() => setEdit(null)}>{t.cancel}</button></div>
@@ -88,7 +91,7 @@ export const PersonasPanel = ({ list, t, onChange, onUse }: { list: Persona[]; t
   <ListEditor title={t.personas} list={list} onChange={onChange} t={t} fields={[['name', t.name, false], ['prompt', t.systemPrompt, true]]} extra={p => <button className="primary" onClick={() => onUse(p)}>{t.usePersona}</button>} />
 
 export const PromptsPanel = ({ list, t, onChange }: { list: PromptItem[]; t: Dict; onChange(l: PromptItem[]): void }) =>
-  <ListEditor title={t.prompts} list={list} onChange={onChange} t={t} fields={[['title', t.name, false], ['content', t.fieldPrompt, true]]} extra={p => <button onClick={() => navigator.clipboard.writeText(p.content)}>{t.copy}</button>} />
+  <ListEditor title={t.prompts} list={list} onChange={onChange} t={t} fields={[['title', t.name, false], ['content', t.fieldPrompt, true]]} extra={p => <button onClick={() => api.copyText(p.content)}>{t.copy}</button>} />
 
 export function ImagesPanel({ s, t, gallery, onChange }: { s: Settings; t: Dict; gallery: GalleryImage[]; onChange(g: GalleryImage[]): void }) {
   const [prompt, setPrompt] = useState(''); const [busy, setBusy] = useState(false); const [err, setErr] = useState('')
@@ -115,7 +118,7 @@ export function ImagesPanel({ s, t, gallery, onChange }: { s: Settings; t: Dict;
       </div>
       <h3>{t.gallery} ({gallery.length})</h3>
       <div className="gallery">{gallery.map(g => <div key={g.id} className="gitem"><img src={g.url} title={g.prompt} onClick={() => setView(g)} />
-        <div className="row"><a title={t.download} href={g.url} download={`image-${g.id}.png`}>⤓</a><button title={t.delete} onClick={() => onChange(gallery.filter(x => x.id !== g.id))}>🗑</button></div></div>)}</div>
+        <div className="row"><a title={t.download} href={g.url} download={`image-${g.id}.png`} className="icon-btn sm" aria-label={t.download}><Download size={14} /></a><button className="icon-btn sm" title={t.delete} aria-label={t.delete} onClick={() => onChange(gallery.filter(x => x.id !== g.id))}><Trash2 size={14} /></button></div></div>)}</div>
       {view && <div className="lightbox" onClick={() => setView(null)}><img src={view.url} /><p>{view.prompt}</p></div>}
     </div>
   )
@@ -148,7 +151,7 @@ export function ToolsPanel({ s, t, onChange }: { s: Settings; t: Dict; onChange(
           <small>{t.status}: {st ? `${st.status}${st.error ? ' — ' + st.error : ''} · ${st.tools.join(', ')}` : '-'}</small>
         </div>) })}
       <div className="row">
-        <button onClick={() => setServers([...s.mcpServers, { id: uid(), name: 'filesystem', type: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '.'], enabled: false }])}>＋ {t.addMcp}</button>
+        <button onClick={() => setServers([...s.mcpServers, { id: uid(), name: 'filesystem', type: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '.'], enabled: false }])}><Plus size={14} />{t.addMcp}</button>
         <button onClick={() => api.syncTools(s.mcpServers).then(setStatus)}>{t.reconnect}</button>
       </div>
       <h3>{t.alwaysAllowed}</h3>

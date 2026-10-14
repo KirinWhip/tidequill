@@ -4,4 +4,6 @@ import 'katex/dist/katex.min.css'
 import 'highlight.js/styles/github-dark.css'
 import './styles.css'
 import App from './App'
+import { applyTokens } from './theme/tokens'
+applyTokens()
 createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>)

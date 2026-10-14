@@ -8,6 +8,7 @@
 // Usage: node tests/mock-server.mjs [port]
 import http from 'node:http'
 
+export const REASONING = ['先分析问题，', '再给出答案。']
 export const REPLY = ['你好！', '这是来自', '模拟服务器的', '流式回复。', ' Hello from mock.']
 
 export function startMockServer(port = 0) {
@@ -18,7 +19,7 @@ export function startMockServer(port = 0) {
     req.on('end', async () => {
       if (req.method === 'GET' && req.url.endsWith('/models')) {
         res.writeHead(200, { 'Content-Type': 'application/json' })
-        return res.end(JSON.stringify({ data: ['mock-ok', 'mock-401', 'mock-429', 'mock-timeout', 'mock-disconnect', 'mock-tool'].map(id => ({ id })) }))
+        return res.end(JSON.stringify({ data: ['mock-ok', 'mock-401', 'mock-429', 'mock-timeout', 'mock-disconnect', 'mock-tool', 'mock-reason', 'mock-slow', 'gpt-4o-mock', 'claude-mock'].map(id => ({ id })) }))
       }
       if (!req.url.endsWith('/chat/completions')) { res.writeHead(404); return res.end('{"error":{"message":"not found"}}') }
       let j = {}
@@ -40,6 +41,13 @@ export function startMockServer(port = 0) {
       if (model === 'mock-tool') {
         const toolMsg = j.messages.at(-1)
         send({ choices: [{ delta: { content: 'TOOL_RESULT: ' + String(toolMsg.content).slice(0, 60) } }] })
+        res.write('data: [DONE]\n\n'); return res.end()
+      }
+      if (model === 'mock-reason' || j.reasoning_effort) {
+        for (const r of REASONING) { send({ choices: [{ delta: { reasoning_content: r } }] }); await sleep(60) }
+      }
+      if (model === 'mock-slow') {
+        for (let i = 0; i < 60 && !res.destroyed; i++) { send({ choices: [{ delta: { content: `chunk${i} ` } }] }); await sleep(100) }
         res.write('data: [DONE]\n\n'); return res.end()
       }
       const parts = model === 'mock-disconnect' ? REPLY.slice(0, 2) : REPLY
