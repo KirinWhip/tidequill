@@ -48,6 +48,7 @@ export interface Conversation {
   systemPrompt: string
   pinned: boolean
   reasoning?: boolean // deep thinking toggle
+  titleManual?: boolean // user renamed it: auto-title never overwrites
   params?: ConvParams // per-conversation overrides of global defaults
   folderId?: string
   tags?: string[]
@@ -108,6 +109,8 @@ export interface Settings {
   imageModel: string
   mcpServers: McpServerConfig[]
   toolsEnabled: boolean
+  builtinTools: boolean // send builtin demo tools (time / calculator); off by default to save tokens
+  autoTitle: boolean // summarize a short title after the first reply
   codeLineNumbers: boolean
   codeCollapseLines: number // collapse code blocks longer than this (0 = never)
   topP: number

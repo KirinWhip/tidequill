@@ -86,7 +86,7 @@ export function Sidebar(p: Props) {
           {!(g.folder?.collapsed) && g.items.map(c => <ConvItem key={c.id} c={c} active={c.id === p.curId} busy={p.busyId === c.id} editing={editingId === c.id} snippet={query ? searchSnippet(c, query) : ''}
             selecting={selecting} selected={selected.has(c.id)} indent={!!g.folder}
             onClick={() => selecting ? toggleSel(c.id) : p.onSelect(c.id)}
-            onRename={title => { p.onPatch(c.id, x => ({ ...x, title: title || x.title })); setEditingId('') }}
+            onRename={title => { p.onPatch(c.id, x => ({ ...x, title: title || x.title, titleManual: title && title !== x.title ? true : x.titleManual })); setEditingId('') }}
             onStartRename={() => setEditingId(c.id)}
             onPin={() => p.onPatch(c.id, x => ({ ...x, pinned: !x.pinned }))}
             onDelete={() => { if (confirm(t.confirmDelete)) p.onDelete([c.id]) }}

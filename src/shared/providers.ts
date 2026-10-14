@@ -13,6 +13,8 @@ export interface ChatOptions {
   reasoning?: boolean
   onReasoning?: (text: string) => void
   fetchImpl?: typeof fetch
+  /** debug hook: the exact request (url with secrets redacted + JSON body), headers are never exposed */
+  onRequest?: (r: { url: string; body: any }) => void
 }
 
 export interface Usage { input: number; output: number; estimated?: boolean }
@@ -54,7 +56,7 @@ function parseDataURL(d: string): { mime: string; data: string } {
 }
 
 // ---------- OpenAI compatible (also used for Ollama via /v1) ----------
-export function toOpenAIMessages(system: string, msgs: Message[]): any[] {
+export function toOpenAIMessages(system: string, msgs: Message[], passReasoning = false): any[] {
   const out: any[] = []
   if (system) out.push({ role: 'system', content: system })
   for (const m of msgs) {
@@ -62,6 +64,8 @@ export function toOpenAIMessages(system: string, msgs: Message[]): any[] {
     if (m.role === 'tool') { out.push({ role: 'tool', tool_call_id: m.toolCallId, content: m.content }); continue }
     if (m.role === 'assistant') {
       const a: any = { role: 'assistant', content: m.content || null }
+      // DeepSeek thinking mode + tools: reasoning_content of earlier turns must be passed back (else HTTP 400)
+      if (passReasoning && m.reasoning) a.reasoning_content = m.reasoning
       if (m.toolCalls?.length) a.tool_calls = m.toolCalls.map(c => ({ id: c.id, type: 'function', function: { name: c.name, arguments: JSON.stringify(c.args) } }))
       out.push(a); continue
     }
@@ -72,15 +76,28 @@ export function toOpenAIMessages(system: string, msgs: Message[]): any[] {
   return out
 }
 
+/** DeepSeek official API (https://api-docs.deepseek.com/guides/thinking_mode) */
+export const isDeepSeekOfficial = (p: ProviderConfig) => /(^|\/\/)api\.deepseek\.com/i.test(p.baseURL || '')
+
+/** deep-thinking request params for OpenAI-compatible endpoints, per provider docs:
+ *  - DeepSeek official: thinking mode is ON by default -> {"thinking":{"type":"enabled"|"disabled"}} + reasoning_effort when enabled
+ *  - Ollama /v1 (OpenAI compat): reasoning_effort "high" | "none" (native `think` is NOT accepted on /v1)
+ *  - DeepSeek models on third-party hosts: no extra params (host-specific, unknown)
+ *  - others (OpenAI o-series / gpt-5, xAI, ...): reasoning_effort "high" only when the toggle is on */
+export function openAIReasoningParams(p: ProviderConfig, o: Pick<ChatOptions, 'reasoning' | 'model'>): Record<string, any> {
+  if (p.type === 'ollama') return { reasoning_effort: o.reasoning ? 'high' : 'none' }
+  if (isDeepSeekOfficial(p)) return o.reasoning ? { thinking: { type: 'enabled' }, reasoning_effort: 'high' } : { thinking: { type: 'disabled' } }
+  if (/deepseek/i.test(o.model)) return {}
+  return o.reasoning ? { reasoning_effort: 'high' } : {}
+}
+
 export function buildOpenAIRequest(p: ProviderConfig, system: string, msgs: Message[], o: ChatOptions): HttpRequest {
   const base = p.type === 'ollama' ? trim(p.baseURL || defaultBaseURL('ollama')) + '/v1' : trim(p.baseURL || defaultBaseURL('openai'))
-  const body: any = { model: o.model, messages: toOpenAIMessages(system, msgs), stream: true, temperature: o.temperature }
+  const body: any = { model: o.model, messages: toOpenAIMessages(system, msgs, isDeepSeekOfficial(p) && !!o.tools?.length), stream: true, temperature: o.temperature }
   if (o.maxTokens) body.max_tokens = o.maxTokens
   if (o.topP != null && o.topP < 1) body.top_p = o.topP
   if (p.type === 'openai') body.stream_options = { include_usage: true }
-  // reasoning models (o-series, gpt-5, grok-3-mini, qwen3...) accept reasoning_effort; DeepSeek-reasoner reasons by model choice
-  if (o.reasoning && p.type !== 'ollama' && !/deepseek/i.test(o.model)) body.reasoning_effort = 'high'
-  if (o.reasoning && p.type === 'ollama') body.think = true
+  Object.assign(body, openAIReasoningParams(p, o))
   if (o.tools?.length) body.tools = o.tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }))
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (p.apiKey) headers.Authorization = `Bearer ${p.apiKey}`
@@ -112,16 +129,25 @@ export function toAnthropicMessages(msgs: Message[]): any[] {
   return out
 }
 
+/** Claude models that only/also support adaptive thinking (4.6+, 5.x, Mythos) */
+export const claudeAdaptive = (model: string) => /claude-(opus|sonnet|haiku|fable|mythos)-(4-[6-9]|[5-9])|mythos/i.test(model)
+
 export function buildAnthropicRequest(p: ProviderConfig, system: string, msgs: Message[], o: ChatOptions): HttpRequest {
   const body: any = { model: o.model, messages: toAnthropicMessages(msgs), stream: true, temperature: Math.min(o.temperature, 1), max_tokens: o.maxTokens || 4096 }
   if (o.topP != null && o.topP < 1) body.top_p = o.topP
   if (system) body.system = system
   if (o.reasoning) {
-    // extended thinking: temperature must be omitted and max_tokens > budget
-    const budget = Math.max(1024, Math.min(8192, Math.floor((o.maxTokens || 4096) / 2)))
-    body.thinking = { type: 'enabled', budget_tokens: budget }
-    body.max_tokens = Math.max(body.max_tokens, budget + 1024)
+    // https://platform.claude.com/docs/en/build-with-claude/thinking : Claude 4.6+ / 5.x use adaptive thinking
+    // ("enabled" is rejected with 400 on 4.7+); display "summarized" so the thinking text is returned.
+    // Older models: https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking (budget_tokens >= 1024 and < max_tokens)
+    if (claudeAdaptive(o.model)) body.thinking = { type: 'adaptive', display: 'summarized' }
+    else {
+      const budget = Math.max(1024, Math.min(8192, Math.floor((o.maxTokens || 4096) / 2)))
+      body.thinking = { type: 'enabled', budget_tokens: budget }
+      body.max_tokens = Math.max(body.max_tokens, budget + 1024)
+    }
     delete body.temperature
+    delete body.top_p
   }
   if (o.tools?.length) body.tools = o.tools.map(t => ({ name: t.name, description: t.description, input_schema: t.parameters }))
   return {
@@ -157,7 +183,9 @@ export function toGeminiContents(msgs: Message[]): any[] {
 export function buildGeminiRequest(p: ProviderConfig, system: string, msgs: Message[], o: ChatOptions): HttpRequest {
   const body: any = { contents: toGeminiContents(msgs), generationConfig: { temperature: o.temperature, maxOutputTokens: o.maxTokens || undefined, ...(o.topP != null && o.topP < 1 ? { topP: o.topP } : {}) } }
   if (system) body.systemInstruction = { parts: [{ text: system }] }
-  if (o.reasoning) body.generationConfig.thinkingConfig = { includeThoughts: true }
+  // https://ai.google.dev/gemini-api/docs/thinking : Gemini 3+ use thinkingLevel, 2.5 uses thinkingBudget (-1 = dynamic);
+  // includeThoughts returns thought summaries (parts with thought: true)
+  if (o.reasoning) body.generationConfig.thinkingConfig = /gemini-(2\.|1\.)/i.test(o.model) ? { includeThoughts: true, thinkingBudget: -1 } : { includeThoughts: true, thinkingLevel: 'high' }
   if (o.tools?.length) body.tools = [{ functionDeclarations: o.tools.map(t => ({ name: t.name, description: t.description, parameters: t.parameters })) }]
   return {
     url: `${trim(p.baseURL || defaultBaseURL('gemini'))}/v1beta/models/${encodeURIComponent(o.model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(p.apiKey)}`,
@@ -265,6 +293,7 @@ export function createAccumulator(type: ProviderConfig['type']) {
 export async function streamChat(p: ProviderConfig, system: string, msgs: Message[], o: ChatOptions): Promise<ChatResult> {
   const req = buildRequest(p, system, msgs, o)
   const f = o.fetchImpl || fetch
+  o.onRequest?.({ url: req.url.replace(/([?&]key=)[^&]+/, '$1***'), body: req.body })
   let res: Response
   try {
     res = await f(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal: o.signal })
@@ -322,4 +351,18 @@ export async function generateImage(p: ProviderConfig, prompt: string, model: st
     body: JSON.stringify({ model, prompt, n: 1, size }),
   })
   return (j.data || []).map((d: any) => d.b64_json ? `data:image/png;base64,${d.b64_json}` : d.url)
+}
+
+/** clean a model-produced title: strip quotes / trailing punctuation, ≤10 chars for CJK, ≤40 otherwise */
+export function cleanTitle(raw: string): string {
+  let s = (raw || '').replace(/<think>[\s\S]*?<\/think>/g, '').split('\n').map(x => x.trim()).find(Boolean) || ''
+  s = s.replace(/^(标题|title)\s*[:：]\s*/i, '').replace(/^["'“”‘’「『《【\s]+|["'“”‘’」』》】。.!！?？,，\s]+$/g, '').trim()
+  return /[\u3400-\u9fff]/.test(s) ? [...s].slice(0, 10).join('') : s.slice(0, 40).trim()
+}
+
+/** one short, non-streaming-semantics request that summarizes a conversation title (auto title) */
+export async function summarizeTitle(p: ProviderConfig, model: string, user: string, reply: string, prompt: string, fetchImpl?: typeof fetch): Promise<string> {
+  const msg: Message = { id: 't', role: 'user', createdAt: 0, content: `${prompt}\n\n[User]\n${user.slice(0, 1000)}\n\n[Assistant]\n${reply.slice(0, 1000)}` }
+  const res = await streamChat(p, '', [msg], { model, temperature: 0.3, maxTokens: 40, reasoning: false, fetchImpl })
+  return cleanTitle(res.text)
 }

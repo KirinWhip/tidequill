@@ -19,7 +19,7 @@ export function seedUserData(seed: Seed): string {
   fs.mkdirSync(path.join(dir, 'data'), { recursive: true })
   const settings = {
     language: seed.language || 'zh', theme: seed.theme || 'light', fontSize: 14, temperature: 0.7, maxTokens: 512, contextLength: 20,
-    proxy: '', requestTimeout: 3, sendKey: 'Enter', toolsEnabled: true, mcpServers: [],
+    proxy: '', requestTimeout: 3, sendKey: 'Enter', toolsEnabled: true, builtinTools: true, autoTitle: false, mcpServers: [],
     providers: [
       { id: 'mock', name: 'Mock', type: 'openai', apiKey: 'sk-plaintext-e2e', baseURL: seed.mockUrl, models: ['mock-ok', 'mock-401', 'mock-429', 'mock-timeout', 'mock-disconnect', 'mock-tool'] },
       { id: 'down', name: 'Down', type: 'openai', apiKey: 'x', baseURL: 'http://127.0.0.1:9/v1', models: ['mock-ok'] },

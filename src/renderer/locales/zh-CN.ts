@@ -38,7 +38,7 @@ export const zhCN = {
   defaultPrompt_summary: '总结', defaultPrompt_summary_c: '请用要点总结以下内容：\n',
   defaultPrompt_polish: '润色', defaultPrompt_polish_c: '请润色以下文字，使其更流畅专业：\n',
   defaultPrompt_explain: '解释代码', defaultPrompt_explain_c: '请逐行解释以下代码：\n',
-  reasoning: '深度思考', reasoningTip: '深度思考/推理：OpenAI 兼容接口发送 reasoning_effort=high，Claude 启用 extended thinking，Gemini 启用 thinking；思考过程可折叠查看。模型不支持时可能报错。',
+  reasoning: '深度思考', reasoningTip: '深度思考：按各服务商官方文档发送参数（DeepSeek thinking、OpenAI reasoning_effort、Claude adaptive/extended thinking、Gemini thinkingConfig、Ollama reasoning_effort），思考过程可折叠查看。DeepSeek 官方接口关闭时会显式发送 thinking: disabled。',
   reasoningContent: '思考过程', reasoningRunning: '思考中…',
   modelSearch: '搜索或输入模型名…', useCustomModel: '使用自定义模型：', modelsLoading: '正在获取模型列表…', modelsRefresh: '刷新模型列表',
   modelsFetchFailed: '获取模型列表失败，可直接输入模型名', noModels: '没有匹配的模型', modelsFromCache: '已缓存的模型列表',
@@ -64,5 +64,11 @@ export const zhCN = {
   ollamaDetect: '检测本地 Ollama', ollamaFound: '已检测到本地 Ollama，模型数：', ollamaNotFound: '未检测到本地 Ollama（{url}）',
   onbTitle: '欢迎使用潮笺 Tidequill', onbSubtitle: '选择一个模型提供方并填写 API 密钥即可开始。', onbPick: '选择提供方', onbTest: '测试连接', onbTesting: '测试中…', onbOk: '连接成功，可用模型数：', onbStart: '开始使用', onbSkip: '跳过',
   about: '关于', aboutTagline: '独立开发的开源桌面 AI 聊天客户端', license: '许可证', author: '作者', repository: '项目主页', openRepo: '在浏览器中打开', thirdParty: '第三方开源组件声明', runtime: '运行环境', independentNote: '本软件为独立实现，未复用其他项目的代码或素材。',
+  noPrice: '未配置价格', noPriceTip: '模型 {model} 没有价格，点击前往价格表添加', addPriceFor: '添加 {model} 的价格',
+  sendBuiltinTools: '发送内置演示工具（当前时间、计算器）', builtinToolsHint: '默认关闭：每个工具定义都会计入输入 token。插件/MCP 工具在启用工具调用时照常发送。',
+  autoTitle: '自动生成对话标题', autoTitleHint: '首次回复后额外发送一次简短请求，总结不超过 10 个字的标题（会产生少量 token）；手动改名后不再覆盖。',
+  titlePrompt: '请为下面这段对话起一个标题，不超过10个字，只输出标题本身，不要标点和引号。如果对话是英文，用不超过6个英文单词的英文标题。',
+  viewRequest: '查看本次请求内容', noRequestYet: '本对话在本次启动后还没有发出请求。', reqUrl: '地址', reqSystem: '系统提示词', reqTools: '工具定义', reqMessages: '消息', reqTotal: '合计', reqChars: '字符',
+  reqNote: 'token 为本地估算；服务商实际计费还包含消息格式和（有工具时）函数调用模板开销，以服务商返回的用量为准。请求头（含 API 密钥）不显示。',
 }
 export type Dict = typeof zhCN

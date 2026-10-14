@@ -6,6 +6,8 @@
 //   mock-disconnect    streams a few chunks then destroys the socket
 //   mock-tool          first asks to call builtin__get_current_time, then answers
 //   mock-quota / mock-notfound / mock-context   insufficient balance (402), model not found (404), context too long (400)
+//   mock-poem          four-line poem in a blockquote (single newlines)
+//   (auto-title)       a request whose last message starts with the title prompt gets TITLE back
 //   mock-flaky         503 for the first 2 attempts of each prompt, then succeeds (tests auto-retry)
 // Also: usage chunk when stream_options.include_usage, Ollama /api/tags, update feed /updates/latest*.yml,
 //       GET /models returns 401 for the key "sk-bad".
@@ -14,6 +16,11 @@ import http from 'node:http'
 
 export const REASONING = ['先分析问题，', '再给出答案。']
 export const REPLY = ['你好！', '这是来自', '模拟服务器的', '流式回复。', ' Hello from mock.']
+
+/** reply to the auto-title request (quotes are stripped by the client) */
+export const TITLE = '「模拟对话标题」'
+/** a four-line poem in a blockquote with single newlines (remark-breaks) */
+export const POEM = '> 床前明月光\n> 疑是地上霜\n> 举头望明月\n> 低头思故乡'
 
 export const USAGE = { prompt_tokens: 42, completion_tokens: 17 }
 export const UPDATE_VERSION = '9.9.9'
@@ -74,7 +81,14 @@ export function startMockServer(port = 0) {
         send({ choices: [{ delta: { content: 'TOOL_RESULT: ' + String(toolMsg.content).slice(0, 60) } }] })
         res.write('data: [DONE]\n\n'); return res.end()
       }
-      if (model === 'mock-reason' || j.reasoning_effort) {
+      const lastText = String((j.messages || []).at(-1)?.content || '')
+      if (/^(请为下面这段对话起一个标题|Give the conversation below a title)/.test(lastText)) {
+        send({ choices: [{ delta: { content: TITLE } }] }); res.write('data: [DONE]\n\n'); return res.end()
+      }
+      if (model === 'mock-poem') {
+        send({ choices: [{ delta: { content: POEM } }] }); res.write('data: [DONE]\n\n'); return res.end()
+      }
+      if (model === 'mock-reason' || (j.reasoning_effort && j.reasoning_effort !== 'none') || j.thinking?.type === 'enabled') {
         for (const r of REASONING) { send({ choices: [{ delta: { reasoning_content: r } }] }); await sleep(60) }
       }
       if (model === 'mock-slow') {

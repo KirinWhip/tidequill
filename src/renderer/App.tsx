@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Attachment, Conversation, Folder, Message, Persona, PromptItem, Settings, GalleryImage } from '../shared/types'
+import type { ToolDef, Attachment, Conversation, Folder, Message, Persona, PromptItem, Settings, GalleryImage } from '../shared/types'
 import { conversationToMarkdown, exportJSON, importJSON, importMarkdown, uid } from '../shared/storage'
-import { streamChat, listModels } from '../shared/providers'
+import { streamChat, listModels, summarizeTitle } from '../shared/providers'
+import type { RequestInfo } from '../shared/reqdebug'
 import { ProviderError, withRetry } from '../shared/errors'
 import { estimateMessages, estimateTokens } from '../shared/usage'
 import { branchAt, forkConversation, switchBranch } from '../shared/branches'
@@ -34,6 +35,9 @@ export default function App() {
   const [gallery, setGallery] = useState<GalleryImage[]>([])
   const [modal, setModal] = useState<Modal>(null)
   const [convSettingsId, setConvSettingsId] = useState('')
+  const [settingsNav, setSettingsNav] = useState<{ tab?: string; priceModel?: string }>({})
+  useEffect(() => { if (modal !== 'settings') setSettingsNav({}) }, [modal])
+  const [lastRequests, setLastRequests] = useState<Record<string, RequestInfo>>({})
   const [busyId, setBusyId] = useState<string>('')
   const [toast, setToast] = useState('')
   const [update, setUpdate] = useState<any>(null)
@@ -117,7 +121,7 @@ export default function App() {
       const mod = e.ctrlKey || e.metaKey
       if (mod && e.key.toLowerCase() === 'n') { e.preventDefault(); newChat() }
       if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); searchRef.current?.focus() }
-      if (mod && e.key === ',') { e.preventDefault(); setModal('settings') }
+      if (mod && e.key === ',') { e.preventDefault(); setSettingsNav({}); setModal('settings') }
       if (e.key === 'Escape') { setModal(null); setConvSettingsId('') }
     }
     window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h)
@@ -136,7 +140,8 @@ export default function App() {
     const maxTokens = P.maxTokens ?? settings.maxTokens, contextLength = P.contextLength ?? settings.contextLength
     const ctrl = new AbortController(); abortRef.current = ctrl; setBusyId(id)
     let msgs = [...history]
-    const tools = settings.toolsEnabled ? await api.listTools() : []
+    // builtin demo tools are only sent when explicitly enabled; plugin / MCP tools when tool calling is on
+    const tools = settings.toolsEnabled ? (await api.listTools()).filter((x: ToolDef) => settings.builtinTools || !x.name.startsWith('builtin__')) : []
     const setMsg = (aid: string, patch: Partial<Message>) => patchConv(id, c => ({ ...c, messages: c.messages.map(m => m.id === aid ? { ...m, ...patch } : m) }))
     try {
       for (let round = 0; round < 8; round++) {
@@ -151,6 +156,7 @@ export default function App() {
           text = ''; reasoning = ''
           return streamChat(provider, conv.systemPrompt, ctx, {
             model: conv.model, temperature, topP, maxTokens, tools: tools.length ? tools : undefined, signal: ctrl.signal, fetchImpl: bridgeFetch, reasoning: !!conv.reasoning,
+            onRequest: r => setLastRequests(m => ({ ...m, [id]: { ...r, at: Date.now() } })),
             onReasoning: r => { reasoning += r; setMsg(aid, { reasoning, status: undefined }) },
             onDelta: d => { text += d; setMsg(aid, { content: text, status: undefined }) },
           })
@@ -181,9 +187,17 @@ export default function App() {
     } finally {
       setBusyId(''); abortRef.current = null
       const c0 = convsRef.current.find(c => c.id === id)
-      if (c0 && (c0.title === t.untitled || c0.title === dicts.zh.untitled || c0.title === dicts.en.untitled)) {
+      const isUntitled = (x: string) => x === t.untitled || x === dicts.zh.untitled || x === dicts.en.untitled
+      if (c0 && !c0.titleManual && isUntitled(c0.title)) {
         const firstUser = msgs.find(m => m.role === 'user')
-        if (firstUser) patchConv(id, c => ({ ...c, title: firstUser.content.slice(0, 30).replace(/\s+/g, ' ') || c.title }))
+        if (firstUser) patchConv(id, c => c.titleManual ? c : ({ ...c, title: firstUser.content.slice(0, 30).replace(/\s+/g, ' ') || c.title }))
+        const firstReply = msgs.find(m => m.role === 'assistant' && m.content && !m.error)
+        if (settings.autoTitle && firstUser && firstReply && msgs.filter(m => m.role === 'user').length === 1) {
+          const fallback = firstUser.content.slice(0, 30).replace(/\s+/g, ' ')
+          summarizeTitle(provider, conv.model, firstUser.content, firstReply.content, t.titlePrompt, bridgeFetch).then(title => {
+            if (title) patchConv(id, c => (c.titleManual || (c.title !== fallback && !isUntitled(c.title))) ? c : { ...c, title })
+          }).catch(() => { /* keep the fallback title */ })
+        }
       }
     }
   }
@@ -298,6 +312,7 @@ export default function App() {
           onSend={send} onStop={() => abortRef.current?.abort()} onRegenerate={regenerate} onEditResend={editResend} onDeleteMsg={deleteMsg}
           onFork={fork} onSwitchBranch={(pos, idx) => patchConv(cur.id, c => switchBranch(c, pos, idx))} onOpenConv={setCurId}
           onPatch={fn => patchConv(cur.id, fn)} onSettings={saveSettings} onConvSettings={() => setConvSettingsId(cur.id)}
+          onPriceSetup={model => { setSettingsNav({ tab: 'usageSettings', priceModel: model }); setModal('settings') }}
           onExport={kind => kind === 'md' ? api.saveFile(`${cur.title}.md`, conversationToMarkdown(cur, { model: t.exportedModel, attachment: t.attachment }))
             : kind === 'json' ? api.saveFile(`${cur.title}.json`, exportJSON([cur])) : api.exportPdf(`${cur.title}.pdf`)} />
           : <div className="empty"><div><MessageSquare size={40} /><p>{t.empty}</p><button className="btn primary" onClick={() => newChat()}><MessageSquarePlus size={16} />{t.newChat}</button></div></div>}
@@ -305,7 +320,7 @@ export default function App() {
       {modal && <div className="overlay" onClick={() => setModal(null)}>
         <div className="modal" onClick={e => e.stopPropagation()}>
           <button className="icon-btn close" title={t.close} aria-label={t.close} onClick={() => setModal(null)}><X size={18} /></button>
-          {modal === 'settings' && <SettingsPanel s={settings} t={t} onChange={saveSettings} actions={actions} />}
+          {modal === 'settings' && <SettingsPanel key={settingsNav.tab || 'default'} s={settings} t={t} onChange={saveSettings} actions={actions} initialTab={settingsNav.tab} priceModel={settingsNav.priceModel} />}
           {modal === 'personas' && <PersonasPanel list={personas} t={t} onChange={l => { setPersonas(l); storage.savePersonas(l) }} onUse={p => newChat(p)} />}
           {modal === 'prompts' && <PromptsPanel list={prompts} t={t} onChange={l => { setPrompts(l); storage.savePrompts(l) }} />}
           {modal === 'images' && <ImagesPanel s={settings} t={t} gallery={gallery} onChange={g => { setGallery(g); storage.saveGallery(g) }} />}
@@ -313,7 +328,7 @@ export default function App() {
           {modal === 'tools' && <ToolsPanel s={settings} t={t} onChange={saveSettings} />}
         </div>
       </div>}
-      {convForSettings && <ConvSettings conv={convForSettings} settings={settings} folders={folders} onPatch={fn => patchConv(convForSettings.id, fn)} onClose={() => setConvSettingsId('')} />}
+      {convForSettings && <ConvSettings conv={convForSettings} settings={settings} lastRequest={lastRequests[convForSettings.id]} folders={folders} onPatch={fn => patchConv(convForSettings.id, fn)} onClose={() => setConvSettingsId('')} />}
       {needsOnboarding && <Onboarding settings={settings} onDone={s => saveSettings({ ...s, onboarded: true })} />}
       {toast && <div className="toast" role="status"><CheckCircle2 size={14} />{toast}</div>}
     </div>

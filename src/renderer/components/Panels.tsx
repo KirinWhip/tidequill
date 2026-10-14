@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Plus, Check, XCircle, Download, Upload, Trash2, Loader2, Search, RefreshCw, ExternalLink } from 'lucide-react'
 import type { AppActions } from '../App'
-import { DEFAULT_PRICES } from '../../shared/usage'
+import { DEFAULT_PRICES, findPrice } from '../../shared/usage'
 import { webdavTest } from '../webdav'
 import type { GalleryImage, McpServerConfig, Persona, PromptItem, ProviderConfig, Settings } from '../../shared/types'
 import type { Dict } from '../i18n'
@@ -12,9 +12,9 @@ import { ProviderError } from '../../shared/errors'
 
 const errText = (t: Dict, e: any) => e instanceof ProviderError ? `${(t as any)['err_' + e.code] || t.err_unknown}${e.detail ? ' (' + e.detail.slice(0, 120) + ')' : ''}` : t.err_unknown
 
-export function SettingsPanel({ s, t, onChange, actions }: { s: Settings; t: Dict; onChange(s: Settings): void; actions: AppActions }) {
+export function SettingsPanel({ s, t, onChange, actions, initialTab, priceModel }: { s: Settings; t: Dict; onChange(s: Settings): void; actions: AppActions; initialTab?: string; priceModel?: string }) {
   type Tab = 'providers' | 'chat' | 'network' | 'usageSettings' | 'data' | 'systemTab' | 'general' | 'shortcuts'
-  const [tab, setTab] = useState<Tab>('providers')
+  const [tab, setTab] = useState<Tab>((initialTab as Tab) || 'providers')
   const set = (p: Partial<Settings>) => onChange({ ...s, ...p })
   const setProv = (id: string, p: Partial<ProviderConfig>) => set({ providers: s.providers.map(x => x.id === id ? { ...x, ...p } : x) })
   const [sel, setSel] = useState(s.providers[0]?.id)
@@ -63,6 +63,10 @@ export function SettingsPanel({ s, t, onChange, actions }: { s: Settings; t: Dic
         <label>{t.maxTokens}<input type="number" value={s.maxTokens} onChange={e => set({ maxTokens: +e.target.value })} /></label>
         <label>{t.contextLength}: {s.contextLength}<input type="range" min={1} max={100} value={s.contextLength} onChange={e => set({ contextLength: +e.target.value })} /></label>
         <label className="check"><input type="checkbox" checked={s.toolsEnabled} onChange={e => set({ toolsEnabled: e.target.checked })} /> {t.toolsEnabled}</label>
+        <label className="check"><input type="checkbox" data-testid="builtin-tools" checked={!!s.builtinTools} onChange={e => set({ builtinTools: e.target.checked })} /> {t.sendBuiltinTools}</label>
+        <div className="meta">{t.builtinToolsHint}</div>
+        <label className="check"><input type="checkbox" data-testid="auto-title" checked={s.autoTitle !== false} onChange={e => set({ autoTitle: e.target.checked })} /> {t.autoTitle}</label>
+        <div className="meta">{t.autoTitleHint}</div>
       </div>}
       {tab === 'network' && <div className="form">
         <label>{t.proxy}<input value={s.proxy} placeholder={t.proxyExample} onChange={e => set({ proxy: e.target.value })} /></label>
@@ -73,6 +77,8 @@ export function SettingsPanel({ s, t, onChange, actions }: { s: Settings; t: Dic
       {tab === 'usageSettings' && <div className="form">
         <label className="check"><input type="checkbox" checked={s.showUsage} onChange={e => set({ showUsage: e.target.checked })} /> {t.showUsage}</label>
         <div className="meta">{t.priceTable}</div>
+        {priceModel && !findPrice(priceModel, s.prices) && <div className="notice row" data-testid="price-missing">{t.noPriceTip.replace('{model}', priceModel)}
+          <button className="primary" data-testid="add-model-price" onClick={() => set({ prices: [{ pattern: priceModel, input: 0, output: 0 }, ...s.prices] })}><Plus size={14} />{t.addPriceFor.replace('{model}', priceModel)}</button></div>}
         <table className="pricetable"><thead><tr><th>{t.pricePattern}</th><th>{t.priceInput}</th><th>{t.priceOutput}</th><th /></tr></thead><tbody>
           {s.prices.map((p, i) => <tr key={i}>
             <td><input aria-label={t.pricePattern} value={p.pattern} onChange={e => set({ prices: s.prices.map((x, j) => j === i ? { ...x, pattern: e.target.value } : x) })} /></td>

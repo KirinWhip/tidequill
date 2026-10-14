@@ -4,7 +4,7 @@ import {
   RefreshCw, Trash2, Volume2, VolumeX, Bot, User, AlertTriangle, ChevronRight, ChevronLeft, GitBranch, Quote, Coins, Loader2, FileJson, Printer, Settings2,
 } from 'lucide-react'
 import { branchInfo } from '../../shared/branches'
-import { conversationUsage, costOf, formatCost } from '../../shared/usage'
+import { conversationUsage, costOf, findPrice, formatCost } from '../../shared/usage'
 import type { Attachment, Conversation, Message, PromptItem, Settings } from '../../shared/types'
 import { useT } from '../i18n'
 import { Markdown, useCopy } from './Markdown'
@@ -15,16 +15,19 @@ interface Props {
   conv: Conversation; convs: Conversation[]; settings: Settings; dark: boolean; busy: boolean; prompts: PromptItem[]
   onSend(c: string, imgs: string[], att: Attachment[], quote?: string): void; onStop(): void; onRegenerate(id: string): void; onEditResend(id: string, c: string): void
   onDeleteMsg(id: string): void; onPatch(fn: (c: Conversation) => Conversation): void; onExport(kind: 'md' | 'json' | 'pdf'): void; onSettings(s: Settings): void
+  /** open Settings > usage price table for this model */
+  onPriceSetup?(model: string): void
   onFork(id: string): void; onSwitchBranch(pos: number, idx: number): void; onOpenConv(id: string): void; onConvSettings(): void
 }
 
-export function ChatView({ conv, convs, settings, dark, busy, prompts, onSend, onStop, onRegenerate, onEditResend, onDeleteMsg, onPatch, onExport, onSettings, onFork, onSwitchBranch, onOpenConv, onConvSettings }: Props) {
+export function ChatView({ conv, convs, settings, dark, busy, prompts, onSend, onStop, onRegenerate, onEditResend, onDeleteMsg, onPatch, onExport, onSettings, onFork, onSwitchBranch, onOpenConv, onConvSettings, onPriceSetup }: Props) {
   const t = useT()
   const [showSys, setShowSys] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
   const [quote, setQuote] = useState('')
   useEffect(() => { if (!exportOpen) return; const h = () => setExportOpen(false); setTimeout(() => window.addEventListener('click', h), 0); return () => window.removeEventListener('click', h) }, [exportOpen])
   const total = conversationUsage(conv.messages, settings.prices)
+  const noPrice = settings.showUsage && !!conv.model && !findPrice(conv.model, settings.prices)
   const parent = conv.forkOf ? convs.find(c => c.id === conv.forkOf!.id) : undefined
   const listRef = useRef<HTMLDivElement>(null)
   useEffect(() => { const el = listRef.current; if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 200) el.scrollTop = el.scrollHeight }, [conv.messages])
@@ -50,11 +53,12 @@ export function ChatView({ conv, convs, settings, dark, busy, prompts, onSend, o
           </div>}
         </span>
       </header>
-      {(parent || (settings.showUsage && total.messages > 0)) && <div className="convbar">
+      {(parent || noPrice || (settings.showUsage && total.messages > 0)) && <div className="convbar">
         {parent && <button className="linkbtn" onClick={() => onOpenConv(parent.id)}><GitBranch size={13} />{t.forkedFrom}{parent.title}</button>}
         <span className="spacer" />
         {settings.showUsage && total.messages > 0 && <span className="usage-total" data-testid="conv-usage"><Coins size={13} />{t.convTotal}: {t.tokens} {(total.input + total.output).toLocaleString()}
-          {total.estimated ? ` (${t.estimated})` : ''} · {t.cost} {formatCost(total.cost)}</span>}
+          {total.estimated ? ` (${t.estimated})` : ''}{noPrice ? '' : ` · ${t.cost} ${formatCost(total.cost)}`}</span>}
+        {noPrice && <button className="linkbtn noprice" data-testid="no-price" title={t.noPriceTip.replace('{model}', conv.model)} onClick={() => onPriceSetup?.(conv.model)}><Coins size={13} />{t.noPrice}</button>}
       </div>}
       {showSys && <div className="sysbox"><label htmlFor="sysprompt">{t.systemPrompt}</label><textarea id="sysprompt" value={conv.systemPrompt} onChange={e => onPatch(c => ({ ...c, systemPrompt: e.target.value }))} rows={3} /></div>}
       <div className="messages" ref={listRef}>
@@ -64,7 +68,7 @@ export function ChatView({ conv, convs, settings, dark, busy, prompts, onSend, o
           return <MessageItem key={m.id} m={m} dark={dark} streaming={busy && i === visible.length - 1 && m.role === 'assistant'} toolResults={toolResults}
             branch={branchInfo(conv, pos)} onBranch={idx => onSwitchBranch(pos, idx)} settings={settings}
             onRegenerate={() => onRegenerate(m.id)} onEditResend={c => onEditResend(m.id, c)} onDelete={() => onDeleteMsg(m.id)} disabled={busy}
-            onFork={() => onFork(m.id)} onQuote={() => setQuote(m.content)} />
+            onFork={() => onFork(m.id)} onQuote={() => setQuote(m.content)} onPriceSetup={onPriceSetup} />
         })}
       </div>
       <Composer conv={conv} settings={settings} busy={busy} prompts={prompts} quote={quote} onClearQuote={() => setQuote('')} onSend={(a, b, c) => { onSend(a, b, c, quote || undefined); setQuote('') }} onStop={onStop} onSettings={onSettings} onPatch={onPatch} />
@@ -155,9 +159,9 @@ function Composer({ conv, settings, busy, prompts, quote, onClearQuote, onSend, 
 
 let speaking: string | null = null
 
-function MessageItem({ m, dark, streaming, toolResults, onRegenerate, onEditResend, onDelete, disabled, branch, onBranch, onFork, onQuote, settings }: {
+function MessageItem({ m, dark, streaming, toolResults, onRegenerate, onEditResend, onDelete, disabled, branch, onBranch, onFork, onQuote, settings, onPriceSetup }: {
   m: Message; dark: boolean; streaming: boolean; toolResults: Map<any, string>; onRegenerate(): void; onEditResend(c: string): void; onDelete(): void; disabled: boolean
-  branch: { index: number; total: number } | null; onBranch(i: number): void; onFork(): void; onQuote(): void; settings: Settings
+  branch: { index: number; total: number } | null; onBranch(i: number): void; onFork(): void; onQuote(): void; settings: Settings; onPriceSetup?(model: string): void
 }) {
   const t = useT()
   const [editing, setEditing] = useState(false); const [v, setV] = useState(m.content)
@@ -202,7 +206,9 @@ function MessageItem({ m, dark, streaming, toolResults, onRegenerate, onEditRese
           </span>}
           <span className="meta">{time}{m.model ? ` · ${m.model}` : ''}</span>
           {settings.showUsage && m.usage && <span className="meta usage" data-testid="msg-usage" title={t.tokens}>
-            <Coins size={12} />{t.inputTokens} {m.usage.input} · {t.outputTokens} {m.usage.output}{m.usage.estimated ? ` (${t.estimated})` : ''} · {formatCost(costOf(m.model || '', m.usage, settings.prices))}</span>}
+            <Coins size={12} />{t.inputTokens} {m.usage.input} · {t.outputTokens} {m.usage.output}{m.usage.estimated ? ` (${t.estimated})` : ''} · {m.model && !findPrice(m.model, settings.prices)
+              ? <button className="linkbtn noprice" data-testid="msg-no-price" title={t.noPriceTip.replace('{model}', m.model)} onClick={() => onPriceSetup?.(m.model!)}>— {t.noPrice}</button>
+              : formatCost(costOf(m.model || '', m.usage, settings.prices))}</span>}
           <button className="icon-btn sm" title={copied ? t.copied : t.copy} aria-label={t.copy} onClick={() => copy(m.content)}>{copied ? <Check size={14} /> : <Copy size={14} />}</button>
           {m.role === 'user' && <button className="icon-btn sm" title={t.edit} aria-label={t.edit} disabled={disabled} onClick={() => { setV(m.content); setEditing(true) }}><Pencil size={14} /></button>}
           {m.role === 'assistant' && <button className="icon-btn sm" title={t.regenerate} aria-label={t.regenerate} disabled={disabled} onClick={onRegenerate}><RefreshCw size={14} /></button>}

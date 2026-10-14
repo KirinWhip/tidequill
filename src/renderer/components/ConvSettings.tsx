@@ -1,20 +1,22 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import type { Conversation, ConvParams, Folder, Settings } from '../../shared/types'
+import { describeRequest, type RequestInfo } from '../../shared/reqdebug'
 import { useT } from '../i18n'
 
 /** per-conversation settings: system prompt, sampling params, folder and tags */
-export function ConvSettings({ conv, settings, folders, onPatch, onClose }: { conv: Conversation; settings: Settings; folders: Folder[]; onPatch(fn: (c: Conversation) => Conversation): void; onClose(): void }) {
+export function ConvSettings({ conv, settings, folders, onPatch, onClose, lastRequest }: { conv: Conversation; settings: Settings; folders: Folder[]; lastRequest?: RequestInfo; onPatch(fn: (c: Conversation) => Conversation): void; onClose(): void }) {
   const t = useT()
   const [title, setTitle] = useState(conv.title)
   const [sys, setSys] = useState(conv.systemPrompt)
   const [p, setP] = useState<ConvParams>(conv.params || {})
   const [folderId, setFolderId] = useState(conv.folderId || '')
+  const [showReq, setShowReq] = useState(false)
   const [tags, setTags] = useState((conv.tags || []).join(', '))
   const num = (k: keyof ConvParams, v: string) => setP(x => { const n = { ...x }; if (v === '') delete n[k]; else n[k] = +v; return n })
   const save = () => {
     const params = Object.keys(p).length ? p : undefined
-    onPatch(c => ({ ...c, title: title.trim() || c.title, systemPrompt: sys, params, folderId: folderId || undefined, tags: [...new Set(tags.split(/[,\uff0c]/).map(x => x.trim()).filter(Boolean))] }))
+    onPatch(c => ({ ...c, title: title.trim() || c.title, titleManual: title.trim() && title.trim() !== c.title ? true : c.titleManual, systemPrompt: sys, params, folderId: folderId || undefined, tags: [...new Set(tags.split(/[,\uff0c]/).map(x => x.trim()).filter(Boolean))] }))
     onClose()
   }
   const field = (k: keyof ConvParams, label: string, step: number, min: number, max?: number) =>
@@ -36,6 +38,23 @@ export function ConvSettings({ conv, settings, folders, onPatch, onClose }: { co
             </div>
             <label>{t.folder}<select value={folderId} onChange={e => setFolderId(e.target.value)}><option value="">{t.noFolder}</option>{folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label>
             <label>{t.tags}<input value={tags} placeholder={t.tagsHint} data-testid="conv-tags" onChange={e => setTags(e.target.value)} /></label>
+            <details className="reqdebug" open={showReq} onToggle={e => setShowReq((e.target as HTMLDetailsElement).open)}>
+              <summary data-testid="req-debug-toggle">{t.viewRequest}</summary>
+              {!lastRequest ? <div className="meta">{t.noRequestYet}</div> : (() => {
+                const d = describeRequest(lastRequest.body)
+                return <div data-testid="req-debug">
+                  <table className="pricetable"><tbody>
+                    <tr><td>{t.reqUrl}</td><td><code>{lastRequest.url}</code></td></tr>
+                    <tr><td>{t.reqSystem}</td><td data-testid="req-system">{d.systemChars} {t.reqChars} ≈ {d.est.system} tokens</td></tr>
+                    <tr><td>{t.reqTools}</td><td data-testid="req-tools">{d.toolCount} · {d.toolsBytes} B ≈ {d.est.tools} tokens</td></tr>
+                    <tr><td>{t.reqMessages}</td><td>{d.messagesBytes} B ≈ {d.est.messages} tokens</td></tr>
+                    <tr><td>{t.reqTotal}</td><td>{d.totalBytes} B ≈ {d.est.total} tokens</td></tr>
+                  </tbody></table>
+                  <div className="meta">{t.reqNote}</div>
+                  <pre className="reqjson">{JSON.stringify(lastRequest.body, null, 2)}</pre>
+                </div>
+              })()}
+            </details>
             <div className="row">
               <button className="btn primary" onClick={save}>{t.save}</button>
               <button className="btn" onClick={() => setP({})}>{t.resetToGlobal}</button>

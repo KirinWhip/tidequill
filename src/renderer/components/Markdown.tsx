@@ -2,6 +2,7 @@ import { api } from '../api'
 import { memo, useEffect, useRef, useState, createContext, useContext } from 'react'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkBreaks from 'remark-breaks'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import rehypeHighlight from 'rehype-highlight'
@@ -105,7 +106,7 @@ export const Markdown = memo(function Markdown({ text, dark }: { text: string; d
     <ReactMarkdown
       skipHtml
       urlTransform={safeUrl}
-      remarkPlugins={[remarkGfm, remarkMath]}
+      remarkPlugins={[remarkGfm, remarkBreaks, remarkMath]}
       rehypePlugins={[rehypeKatex, [rehypeHighlight, { detect: true, ignoreMissing: true }]]}
       components={{
         pre: ({ children }: any) => {

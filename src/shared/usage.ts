@@ -13,6 +13,8 @@ export const DEFAULT_PRICES: Price[] = [
   { pattern: 'claude-3-5-haiku', input: 0.8, output: 4 },
   { pattern: 'gemini-2.5-pro', input: 1.25, output: 10 },
   { pattern: 'gemini-2.5-flash', input: 0.3, output: 2.5 },
+  { pattern: 'deepseek-flash', input: 0.3, output: 1.2 },
+  { pattern: 'deepseek-v4-pro', input: 1.32, output: 3.96 },
   { pattern: 'deepseek-chat', input: 0.27, output: 1.1 },
   { pattern: 'deepseek-reasoner', input: 0.55, output: 2.19 },
   { pattern: 'grok-4', input: 3, output: 15 },

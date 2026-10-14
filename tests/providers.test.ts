@@ -59,12 +59,37 @@ describe('reasoning / deep thinking', () => {
     expect(buildRequest(P('openai'), '', msgs, opts).body.reasoning_effort).toBeUndefined()
   })
   it('anthropic enables extended thinking without temperature', () => {
-    const b = buildRequest(P('anthropic'), '', msgs, r).body
+    const b = buildRequest(P('anthropic'), '', msgs, { ...r, model: 'claude-3-7-sonnet-latest' }).body
     expect(b.thinking.type).toBe('enabled'); expect(b.temperature).toBeUndefined()
     expect(b.max_tokens).toBeGreaterThan(b.thinking.budget_tokens)
   })
   it('gemini includes thoughts', () => {
-    expect(buildRequest(P('gemini'), '', msgs, r).body.generationConfig.thinkingConfig).toEqual({ includeThoughts: true })
+    expect(buildRequest(P('gemini'), '', msgs, { ...r, model: 'gemini-2.5-flash' }).body.generationConfig.thinkingConfig).toEqual({ includeThoughts: true, thinkingBudget: -1 })
+    expect(buildRequest(P('gemini'), '', msgs, { ...r, model: 'gemini-3-pro-preview' }).body.generationConfig.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: 'high' })
+    expect(buildRequest(P('gemini'), '', msgs, opts).body.generationConfig.thinkingConfig).toBeUndefined()
+  })
+  it('deepseek official: thinking enabled/disabled per docs', () => {
+    const ds = { ...P('openai'), baseURL: 'https://api.deepseek.com' }
+    expect(buildRequest(ds, '', msgs, { ...r, model: 'deepseek-flash' }).body).toMatchObject({ thinking: { type: 'enabled' }, reasoning_effort: 'high' })
+    const off = buildRequest(ds, '', msgs, { ...opts, tools: undefined, model: 'deepseek-flash' }).body
+    expect(off.thinking).toEqual({ type: 'disabled' }); expect(off.reasoning_effort).toBeUndefined()
+  })
+  it('deepseek passes reasoning_content back only when tools are present', () => {
+    const ds = { ...P('openai'), baseURL: 'https://api.deepseek.com' }
+    const hist: any[] = [{ id: 'u', role: 'user', content: 'q', createdAt: 0 }, { id: 'a', role: 'assistant', content: 'x', reasoning: 'R', createdAt: 0 }, { id: 'u2', role: 'user', content: 'q2', createdAt: 0 }]
+    const withTools = buildRequest(ds, '', hist, { ...r, model: 'deepseek-flash', tools: [{ name: 't', description: 'd', parameters: { type: 'object', properties: {} } }] as any }).body
+    expect(withTools.messages[1].reasoning_content).toBe('R')
+    expect(buildRequest(ds, '', hist, { ...r, model: 'deepseek-flash' }).body.messages[1].reasoning_content).toBeUndefined()
+  })
+  it('ollama uses reasoning_effort on /v1 (not think)', () => {
+    expect(buildRequest(P('ollama'), '', msgs, r).body).toMatchObject({ reasoning_effort: 'high' })
+    expect(buildRequest(P('ollama'), '', msgs, r).body.think).toBeUndefined()
+    expect(buildRequest(P('ollama'), '', msgs, opts).body.reasoning_effort).toBe('none')
+  })
+  it('claude 4.6+/5.x use adaptive thinking with summarized display', () => {
+    const b = buildRequest(P('anthropic'), '', msgs, { ...r, model: 'claude-opus-4-7' }).body
+    expect(b.thinking).toEqual({ type: 'adaptive', display: 'summarized' }); expect(b.temperature).toBeUndefined()
+    expect(buildRequest(P('anthropic'), '', msgs, { ...r, model: 'claude-sonnet-4-5' }).body.thinking.type).toBe('enabled')
   })
   it('collects reasoning from openai/deepseek, anthropic and gemini streams', () => {
     const a = createAccumulator('openai')

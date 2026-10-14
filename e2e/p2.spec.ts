@@ -198,7 +198,7 @@ test('fork into a new conversation and quote reply', async () => {
   await expect(page.locator('.conv')).toHaveCount(2)
   await expect(page.locator('.msg')).toHaveCount(2)
   await expect(page.locator('.convbar')).toContainText(zhCN.forkedFrom)
-  await page.locator('.convbar .linkbtn').click()
+  await page.locator('.convbar .linkbtn', { hasText: zhCN.forkedFrom }).click()
   await expect(page.locator('.msg')).toHaveCount(4)
 })
 
