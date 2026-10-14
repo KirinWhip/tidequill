@@ -147,3 +147,5 @@ CI (`.github/workflows/ci.yml`) runs on `windows-latest`: unit tests, packaging,
 ## License
 
 MIT (see `LICENSE`). Tidequill is an independent implementation and reuses no code or assets from GPL projects such as chatboxai/chatbox. See [`docs/LICENSE-AUDIT.md`](docs/LICENSE-AUDIT.md). Third-party components are listed in [`THIRD_PARTY_NOTICES.txt`](THIRD_PARTY_NOTICES.txt) and on the in-app About page.
+
+Dependency licence policy: permissive licences plus the file-level weak-copyleft EPL-2.0 are accepted. The only EPL-2.0 component is elkjs (a Mermaid 12 dependency), shipped unmodified; its full licence text and source location are in `THIRD_PARTY_NOTICES.txt`. GPL / LGPL / AGPL runtime dependencies are not accepted.

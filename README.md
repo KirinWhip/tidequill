@@ -183,3 +183,4 @@ node tests/mock-server.mjs 18080                   # 本地模拟 OpenAI 兼容�
 
 - 本项目以 **MIT** 许可发布（见 `LICENSE`）。它是独立实现，没有复用任何 GPL 项目（包括 chatboxai/chatbox）的代码或素材，审计过程见 [`docs/LICENSE-AUDIT.md`](docs/LICENSE-AUDIT.md)。
 - 第三方组件及其许可证见 [`THIRD_PARTY_NOTICES.txt`](THIRD_PARTY_NOTICES.txt)，应用内“关于”页面也可以查看。
+- 依赖许可政策：只接受宽松许可，外加文件级弱 copyleft 的 EPL-2.0。目前唯一的 EPL-2.0 组件是 Mermaid 12 依赖的 elkjs，未经修改随包分发，其许可证全文和源代码地址见 `THIRD_PARTY_NOTICES.txt`；不接受 GPL / LGPL / AGPL 随包依赖。详见 [`docs/LICENSE-AUDIT.md`](docs/LICENSE-AUDIT.md)。
