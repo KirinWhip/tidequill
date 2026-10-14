@@ -2,8 +2,9 @@
 // (renderer modules recorded by the vite plugin + main/preload inputs from the esbuild metafile).
 import fs from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const meta = f => { try { return JSON.parse(fs.readFileSync(path.join(root, 'build-meta', f), 'utf8')) } catch { return null } }
 const renderer = meta('renderer-modules.json') || []
 const main = meta('main-meta.json')
