@@ -101,6 +101,21 @@
 - moderate：`electron-builder` 链上的 `global-agent` / `roarr` / `sprintf-js`（只在打包时运行）；`mammoth → argparse → sprintf-js`（argparse 只被 mammoth 的命令行入口使用，没有打包进应用；mammoth 本身被标为受影响是因为依赖关系）。
 - CI 的 Security 工作流对“随应用发布的代码（打包进应用的 npm 包 + Electron）中出现 high / critical”才失败，其余在任务摘要中列出。
 
+### 阶段 D：CodeQL 首次结果（第 25 项）
+首次运行（security-extended 查询）有 5 条未关闭告警，逐条判断如下，**没有在 GitHub 上关闭（dismiss）任何告警**：
+| 级别 | 规则 | 位置 | 判断 |
+|---|---|---|---|
+| high | js/remote-property-injection | tests/mock-server.mjs:86 | 只在测试中运行的本地模拟服务器，不随应用发布。 |
+| high | js/polynomial-redos | tests/mock-server.mjs:81 | 同上。 |
+| high | js/clear-text-storage-of-sensitive-data | src/renderer/api.ts:9 | 渲染进程脱离 Electron、在普通浏览器中运行时的 localStorage 兜底（仅开发调试）；Electron 中走主进程并用 safeStorage 加密。误报，但代码确实存在明文路径。 |
+| high | js/insecure-randomness | src/renderer/App.tsx:151 | `uid()` 用 Math.random 生成消息 id，不用于任何安全目的。误报。 |
+| medium | actions/unpinned-tag | .github/workflows/ci.yml | 第三方 action `softprops/action-gh-release@v2` 未固定提交；**已改为固定到提交 SHA**（3bb12739…）。 |
+
+### 阶段 D：测试结果
+- 单元测试：174 / 174（Linux 和 Windows CI 相同）。
+- E2E Linux（打包后的 linux-unpacked，Xvfb）：96 / 96 通过。第一次全量运行有 2 个失败，原因是 p3 用例写死了版本号 1.0.0，版本号改为 1.0.1 后失败；已改为读取 package.json，重新全量运行 96 通过。
+- E2E Windows CI（run 38550513420）：95 通过，1 跳过（旧数据迁移用例在 Windows CI 上跳过，与之前相同），0 flaky。
+
 ### 需要用户手动验证的项目（自动化无法覆盖）
 详细步骤见 [docs/MANUAL-TESTS.md](MANUAL-TESTS.md)：1.0.0 → 1.0.1 自动更新、开机自动启动、旧数据迁移（`%APPDATA%\ChatBox Clone`）、真实 DeepSeek 深度思考、真实 token 数、Windows 标题栏按钮、真实麦克风、中文 OCR、真实联网搜索。另外：用 Excel 实际保存的 .xlsx（含日期和合并单元格）测试附件提取。
 
