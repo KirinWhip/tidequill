@@ -22,6 +22,9 @@ function pkgRoot(id) {
   return abs.slice(0, abs.lastIndexOf('node_modules/') + 13) + name
 }
 const roots = new Set(ids.map(pkgRoot).filter(Boolean))
+// files copied verbatim into dist/ocr (see OCR_ASSETS in vite.config.ts) are shipped too
+for (const p of ['tesseract.js', 'tesseract.js-core']) roots.add(path.join(root, 'node_modules', p))
+const workerLicense = (() => { try { return fs.readFileSync(path.join(root, 'node_modules/tesseract.js/dist/worker.min.js.LICENSE.txt'), 'utf8').trim() } catch { return '' } })()
 const pkgs = new Map()
 for (const r of roots) {
   let pj; try { pj = JSON.parse(fs.readFileSync(path.join(r, 'package.json'), 'utf8')) } catch { continue }
@@ -46,6 +49,10 @@ const out = [
   `Packages: ${list.length}. Licenses: ${Object.entries(summary).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} (${v})`).join(', ')}`,
   '',
   ...list.map(p => `- ${p.name}@${p.version}  ${p.license}  ${p.repo}`),
+  '',
+  'OCR: dist/ocr/worker.min.js is the prebuilt tesseract.js worker (Apache-2.0); it embeds the components named in its license header:',
+  workerLicense,
+  'OCR language data (*.traineddata) is NOT shipped. It is downloaded on demand when OCR is enabled (default source: the @tesseract.js-data npm packages via jsDelivr, MIT; the data itself originates from tesseract-ocr/tessdata, Apache-2.0).',
   '',
   '='.repeat(78),
   ...list.flatMap(p => ['', `${p.name}@${p.version} — ${p.license}`, '-'.repeat(78), p.text || (p.license === 'MIT' ? `(package ships no license file; package.json declares MIT. Standard MIT terms apply:)\n${MIT}` : `(no license file in package; license field: ${p.license})`)]),

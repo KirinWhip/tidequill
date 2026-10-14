@@ -3,6 +3,7 @@ import { Plus, Check, XCircle, Download, Upload, Trash2, Loader2, Search, Refres
 import type { AppActions } from '../App'
 import { DEFAULT_PRICES, DEFAULT_CONTEXT_WINDOWS, findPrice } from '../../shared/usage'
 import { ProvidersTab } from './ProvidersTab'
+import { SearchTab, ChatExtras } from './FeatureSettings'
 import { webdavTest } from '../webdav'
 import type { GalleryImage, McpServerConfig, Persona, PromptItem, ProviderConfig, Settings } from '../../shared/types'
 import type { Dict } from '../i18n'
@@ -14,7 +15,7 @@ import { ProviderError } from '../../shared/errors'
 const errText = (t: Dict, e: any) => e instanceof ProviderError ? `${(t as any)['err_' + e.code] || t.err_unknown}${e.detail ? ' (' + e.detail.slice(0, 120) + ')' : ''}` : t.err_unknown
 
 export function SettingsPanel({ s, t, onChange, actions, initialTab, priceModel }: { s: Settings; t: Dict; onChange(s: Settings): void; actions: AppActions; initialTab?: string; priceModel?: string }) {
-  type Tab = 'providers' | 'chat' | 'network' | 'usageSettings' | 'data' | 'systemTab' | 'general' | 'shortcuts'
+  type Tab = 'providers' | 'searchTab' | 'chat' | 'network' | 'usageSettings' | 'data' | 'systemTab' | 'general' | 'shortcuts'
   const [tab, setTab] = useState<Tab>((initialTab as Tab) || 'providers')
   // every change is persisted immediately; show a short "saved" confirmation
   const [savedAt, setSavedAt] = useState(0)
@@ -31,13 +32,14 @@ export function SettingsPanel({ s, t, onChange, actions, initialTab, priceModel 
   const fail = (x: any) => setMsg(<span className="errmsg" data-testid="settings-msg"><XCircle size={14} />{x}</span>)
   const wd = s.webdav
   const setWd = (p: Partial<Settings['webdav']>) => set({ webdav: { ...wd, ...p } })
-  const tabs: Tab[] = ['providers', 'chat', 'network', 'usageSettings', 'data', 'systemTab', 'general', 'shortcuts']
+  const tabs: Tab[] = ['providers', 'searchTab', 'chat', 'network', 'usageSettings', 'data', 'systemTab', 'general', 'shortcuts']
   const sys = actions.systemStatus || {}
   return (
     <div className="panel">
       <h2 className="withflag">{t.settings}{savedAt > 0 && <span className="savedflag" data-testid="saved-flag" role="status"><Check size={13} />{t.savedFlag}</span>}</h2>
       <div className="tabs">{tabs.map(k => <button key={k} data-tab={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{t[k]}</button>)}</div>
       {tab === 'providers' && <ProvidersTab s={s} t={t} set={set} actions={actions} secure={secure} />}
+      {tab === 'searchTab' && <SearchTab s={s} t={t} set={set} secure={secure} />}
       {tab === 'chat' && <div className="form">
         <label>{t.readingWidth}<div className="seg" role="radiogroup" aria-label={t.readingWidth}>
           {(['narrow', 'standard', 'wide'] as const).map(w => <button key={w} role="radio" aria-checked={(s.readingWidth || 'standard') === w} data-width={w} className={(s.readingWidth || 'standard') === w ? 'on' : ''} onClick={() => set({ readingWidth: w })}>{t['width_' + w]}</button>)}
@@ -51,6 +53,7 @@ export function SettingsPanel({ s, t, onChange, actions, initialTab, priceModel 
         <div className="meta">{t.builtinToolsHint}</div>
         <label className="check"><input type="checkbox" data-testid="auto-title" checked={s.autoTitle !== false} onChange={e => set({ autoTitle: e.target.checked })} /> {t.autoTitle}</label>
         <div className="meta">{t.autoTitleHint}</div>
+        <ChatExtras s={s} t={t} set={set} />
       </div>}
       {tab === 'network' && <div className="form">
         <label>{t.proxy}<input value={s.proxy} placeholder={t.proxyExample} onChange={e => set({ proxy: e.target.value })} /></label>
@@ -124,7 +127,7 @@ export function SettingsPanel({ s, t, onChange, actions, initialTab, priceModel 
       {tab === 'shortcuts' && <div className="form">
         <label>{t.sendKey}<select value={s.sendKey} onChange={e => set({ sendKey: e.target.value as any })}><option value="Enter">{t.key_enter}</option><option value="Ctrl+Enter">{t.key_ctrlEnter}</option></select></label>
         <table className="sc"><tbody>
-          {([[t.sc_global, s.globalShortcut || '-'], [t.sc_new, `${t.key_ctrl}+N`], [t.sc_search, `${t.key_ctrl}+K`], [t.sc_settings, `${t.key_ctrl}+,`], [t.sc_reasoning, `${t.key_ctrl}+D`], [t.sc_convSettings, `${t.key_ctrl}+Shift+S`], [t.sc_export, `${t.key_ctrl}+E`], [t.sc_sysPrompt, `${t.key_ctrl}+Shift+P`], [t.sc_send, s.sendKey === 'Enter' ? t.key_enter : t.key_ctrlEnter], [t.sc_close, t.key_esc], [t.sc_devtools, t.key_f12]] as const).map(([a, b]) =>
+          {([[t.sc_global, s.globalShortcut || '-'], [t.sc_new, `${t.key_ctrl}+N`], [t.sc_search, `${t.key_ctrl}+K`], [t.sc_settings, `${t.key_ctrl}+,`], [t.sc_reasoning, `${t.key_ctrl}+D`], [t.sc_convSettings, `${t.key_ctrl}+Shift+S`], [t.sc_export, `${t.key_ctrl}+E`], [t.sc_sysPrompt, `${t.key_ctrl}+Shift+P`], [t.sc_find, `${t.key_ctrl}+F`], [t.sc_send, s.sendKey === 'Enter' ? t.key_enter : t.key_ctrlEnter], [t.sc_close, t.key_esc], [t.sc_devtools, t.key_f12]] as const).map(([a, b]) =>
             <tr key={a}><td>{a}</td><td><kbd>{b}</kbd></td></tr>)}
         </tbody></table>
       </div>}

@@ -14,6 +14,12 @@ export interface ProviderConfig {
 export interface Attachment {
   name: string
   text: string
+  /** how the text was obtained (shown on the chip) */
+  kind?: 'text' | 'pdf' | 'docx' | 'xlsx' | 'pptx' | 'ocr'
+  /** original file size in bytes */
+  size?: number
+  /** text was cut at the character limit */
+  truncated?: boolean
 }
 
 export interface ToolCall {
@@ -38,6 +44,13 @@ export interface Message {
   usage?: { input: number; output: number; estimated?: boolean }
   quote?: string
   status?: string // transient (e.g. retry notice)
+  /** web search results used for this reply */
+  citations?: import('./websearch').Citation[]
+  searchQuery?: string
+  searchError?: string
+  /** multi-model compare: replies to the same question share a group id; the chosen one stays in the context */
+  compareGroup?: string
+  compareChosen?: boolean
   createdAt: number
 }
 
@@ -56,6 +69,8 @@ export interface Conversation {
   tags?: string[]
   branches?: Record<string, import('./branches').BranchPoint>
   forkOf?: { id: string; messageId: string }
+  /** extra models answering every question side by side (compare mode) */
+  compareModels?: { providerId: string; model: string }[]
   createdAt: number
   updatedAt: number
 }
@@ -113,6 +128,13 @@ export interface Settings {
   toolsEnabled: boolean
   builtinTools: boolean // send builtin demo tools (time / calculator); off by default to save tokens
   autoTitle: boolean // summarize a short title after the first reply
+  webSearch?: import('./websearch').WebSearchConfig
+  stt?: import('./stt').SttConfig
+  ocr?: OcrConfig
+  /** attachments larger than this are rejected with a message (MB) */
+  maxAttachmentMB?: number
+  /** extracted text is cut at this many characters */
+  maxAttachmentChars?: number
   readingWidth?: 'narrow' | 'standard' | 'wide'
   contextWindows?: import('./usage').ContextWindow[]
   codeLineNumbers: boolean
@@ -135,3 +157,6 @@ export interface ToolDef {
   description: string
   parameters: Record<string, unknown> // JSON schema
 }
+
+/** image OCR (tesseract.js); off by default, language data is downloaded on demand */
+export interface OcrConfig { enabled: boolean; langs: string[]; source: string }

@@ -25,16 +25,76 @@ export const POEM = '> 床前明月光\n> 疑是地上霜\n> 举头望明月\n> 
 export const USAGE = { prompt_tokens: 42, completion_tokens: 17 }
 export const UPDATE_VERSION = '9.9.9'
 
-export function startMockServer(port = 0) {
+/** Round 2 · C: mocked web search APIs (same response shapes as the real services) */
+export const SEARCH_RESULTS = [
+  { title: '潮汐 - 维基百科', url: 'https://zh.wikipedia.org/wiki/%E6%BD%AE%E6%B1%90', content: '潮汐是海水在月球和太阳引力作用下发生的周期性涨落现象。' },
+  { title: 'Tides | NOAA Ocean Service', url: 'https://oceanservice.noaa.gov/education/tutorial_tides/', content: 'Most coastal areas experience two high tides and two low tides every lunar day.' },
+  { title: 'Why are there two tides a day?', url: 'https://example.org/tides-two-a-day', content: 'The Moon creates two tidal bulges, one on each side of the Earth.' },
+]
+/** reply of any chat model when the request carries search results */
+export const CITED_REPLY = '潮汐主要由月球引力引起 [1]，大多数海岸每天出现两次高潮和两次低潮 [2]。地球两侧各有一个潮汐隆起 [3]。'
+export const TRANSCRIPT = '这是一段语音转写的测试文本'
+export const COMPARE_REPLIES = { 'cmp-a': '模型 A 的回答：潮汐每天两次。', 'cmp-b': '模型 B 的回答：主要原因是月球引力。', 'cmp-c': 'Model C: two bulges, two tides.' }
+
+export function startMockServer(port = 0, opts = {}) {
   const sockets = new Set()
   const flaky = new Map()
   const requests = []
+  const searches = [] // { provider, method, url, headers, body }
+  const transcriptions = [] // { contentType, model, language, fileName, fileBytes, auth }
   const timings = [] // receive time of each request (diagnostics)
   const server = http.createServer((req, res) => {
     timings.push({ ev: 'req', at: Date.now(), url: req.url, rport: req.socket.remotePort })
     let body = ''
-    req.on('data', d => (body += d))
+    const raw = []
+    req.on('data', d => { raw.push(d); body += d })
     req.on('end', async () => {
+      const u = new URL(req.url, 'http://x')
+      const json = (status, o) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)) }
+      // ---- web search ----
+      if (u.pathname === '/search/tavily') {
+        let j = {}; try { j = JSON.parse(body) } catch {}
+        searches.push({ provider: 'tavily', method: req.method, query: j.query, auth: req.headers.authorization, max: j.max_results })
+        if (!/^Bearer tvly-/.test(req.headers.authorization || '')) return json(401, { detail: { error: 'Unauthorized: missing or invalid API key.' } })
+        return json(200, { query: j.query, results: SEARCH_RESULTS.slice(0, j.max_results || 5).map(r => ({ ...r, score: 0.9 })) })
+      }
+      if (u.pathname === '/searxng/search') {
+        searches.push({ provider: 'searxng', method: req.method, query: u.searchParams.get('q'), format: u.searchParams.get('format') })
+        if (u.searchParams.get('format') !== 'json') { res.writeHead(403); return res.end('Forbidden') }
+        return json(200, { query: u.searchParams.get('q'), results: SEARCH_RESULTS.map(r => ({ ...r, engine: 'mock' })) })
+      }
+      if (u.pathname === '/bing/v7.0/search') {
+        searches.push({ provider: 'bing', method: req.method, query: u.searchParams.get('q'), key: req.headers['ocp-apim-subscription-key'], count: u.searchParams.get('count') })
+        if (!req.headers['ocp-apim-subscription-key']) return json(401, { error: { code: '401', message: 'Access denied due to missing subscription key.' } })
+        return json(200, { webPages: { value: SEARCH_RESULTS.map(r => ({ name: r.title, url: r.url, snippet: r.content })) } })
+      }
+      if (u.pathname === '/brave/res/v1/web/search') {
+        searches.push({ provider: 'brave', method: req.method, query: u.searchParams.get('q'), key: req.headers['x-subscription-token'], count: u.searchParams.get('count') })
+        if (!req.headers['x-subscription-token']) return json(422, { message: 'missing token' })
+        return json(200, { web: { results: SEARCH_RESULTS.map(r => ({ title: r.title, url: r.url, description: `<strong>${r.content}</strong>` })) } })
+      }
+      // ---- speech to text (OpenAI-compatible multipart) ----
+      if (u.pathname.endsWith('/audio/transcriptions')) {
+        const buf = Buffer.concat(raw)
+        const ct = req.headers['content-type'] || ''
+        const boundary = /boundary=(.+)$/.exec(ct)?.[1]
+        const fields = {}; let fileName = '', fileBytes = 0, fileType = ''
+        if (boundary) for (const part of buf.toString('latin1').split('--' + boundary)) {
+          const m = /name="([^"]+)"(?:; filename="([^"]+)")?[\s\S]*?\r\n\r\n([\s\S]*)\r\n$/.exec(part)
+          if (!m) continue
+          if (m[2]) { fileName = m[2]; fileBytes = m[3].length; fileType = /Content-Type: ([^\r\n]+)/.exec(part)?.[1] || '' } else fields[m[1]] = m[3]
+        }
+        transcriptions.push({ contentType: ct.split(';')[0], model: fields.model, language: fields.language, fileName, fileType, fileBytes, auth: req.headers.authorization })
+        if (!fileBytes) return json(400, { error: { message: 'file is empty' } })
+        return json(200, { text: TRANSCRIPT })
+      }
+      // ---- OCR language data (served from a local file given in opts.ocrDir) ----
+      if (u.pathname.startsWith('/ocr/') && opts.ocrDir) {
+        const fs = await import('node:fs'); const path = await import('node:path')
+        const f = path.join(opts.ocrDir, path.basename(u.pathname))
+        if (!fs.existsSync(f)) { res.writeHead(404); return res.end('no such language') }
+        res.writeHead(200, { 'Content-Type': 'application/octet-stream' }); return res.end(fs.readFileSync(f))
+      }
       if (req.method === 'GET' && req.url.endsWith('/api/tags')) {
         res.writeHead(200, { 'Content-Type': 'application/json' })
         return res.end(JSON.stringify({ models: [{ name: 'llama3.2:latest' }, { name: 'qwen2.5:7b' }, { name: 'deepseek-r1:8b' }] }))
@@ -85,6 +145,13 @@ export function startMockServer(port = 0) {
         res.write('data: [DONE]\n\n'); return res.end()
       }
       const lastText = String((j.messages || []).at(-1)?.content || '')
+      if (COMPARE_REPLIES[model]) {
+        for (const p of COMPARE_REPLIES[model].match(/.{1,6}/g)) { send({ choices: [{ delta: { content: p } }] }); await sleep(model === 'cmp-b' ? 90 : 50) }
+        res.write('data: [DONE]\n\n'); return res.end()
+      }
+      if (lastText.includes('<web_search>')) {
+        send({ choices: [{ delta: { content: CITED_REPLY } }] }); res.write('data: [DONE]\n\n'); return res.end()
+      }
       if (/^(请为下面这段对话起一个标题|Give the conversation below a title)/.test(lastText)) {
         send({ choices: [{ delta: { content: TITLE } }] }); res.write('data: [DONE]\n\n'); return res.end()
       }
@@ -107,7 +174,7 @@ export function startMockServer(port = 0) {
   })
   server.on('connection', s => { timings.push({ ev: 'conn', at: Date.now(), rport: s.remotePort }); sockets.add(s); s.on('close', () => sockets.delete(s)) })
   return new Promise(resolve => server.listen(port, '127.0.0.1', () => resolve({
-    port: server.address().port, requests, timings,
+    port: server.address().port, requests, timings, searches, transcriptions,
     url: `http://127.0.0.1:${server.address().port}/v1`,
     close: () => new Promise(r => { for (const s of sockets) s.destroy(); server.close(() => r()) }),
   })))

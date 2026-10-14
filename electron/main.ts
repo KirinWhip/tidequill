@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain, dialog, session, shell, Menu, net, safeStorage, clipboard, Tray, globalShortcut, nativeImage, nativeTheme } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, session, shell, Menu, net, safeStorage, clipboard, Tray, globalShortcut, nativeImage, nativeTheme, protocol, systemPreferences } from 'electron'
+import crypto from 'node:crypto'
 import { autoUpdater } from 'electron-updater'
 import path from 'node:path'
 import fs from 'node:fs'
@@ -8,6 +9,21 @@ import { encryptSettings, decryptSettings, type Cipher } from './secrets'
 import { mainStrings, type MainLang } from './i18n'
 
 if (process.env.TIDEQUILL_USER_DATA) app.setPath('userData', process.env.TIDEQUILL_USER_DATA)
+
+/** tqpreview: HTML/SVG code-block previews. Each preview is its own document served with a strict CSP and the
+ *  `sandbox allow-scripts` directive; the renderer embeds it in <iframe sandbox="allow-scripts"> (no allow-same-origin),
+ *  so preview scripts get an opaque origin: no access to the app DOM, window.api (preload is main-frame only) or IPC.
+ *  tqocr: serves downloaded OCR language data (userData/ocr) to the tesseract.js worker. */
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'tqpreview', privileges: { standard: true, secure: true } },
+  { scheme: 'tqocr', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
+])
+export const PREVIEW_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; form-action 'none'; base-uri 'none'; sandbox allow-scripts"
+const previews = new Map<string, string>()
+const ocrDir = () => path.join(app.getPath('userData'), 'ocr')
+const OCR_LANG = /^[a-z_]{3,12}$/
+/** microphone: every getUserMedia request is denied unless the voice-input button armed it just before (10 s window) */
+let micArmedUntil = 0
 
 const ALLOWED_KEYS = new Set(['settings', 'conversations', 'personas', 'prompts', 'gallery', 'modelCache', 'folders', 'tombstones'])
 const dataDir = () => path.join(app.getPath('userData'), 'data')
@@ -71,6 +87,8 @@ function createWindow() {
   })
   Menu.setApplicationMenu(null)
   win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) shell.openExternal(url); return { action: 'deny' } })
+  // sub frames (HTML previews) may not navigate anywhere else
+  win.webContents.on('will-frame-navigate', e => { if (!e.isMainFrame && !e.url.startsWith('tqpreview:')) e.preventDefault() })
   win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('file:') && !url.startsWith(process.env.VITE_DEV_SERVER_URL || '\0')) e.preventDefault() })
   if (process.env.VITE_DEV_SERVER_URL) win.loadURL(process.env.VITE_DEV_SERVER_URL)
   else win.loadFile(path.join(__dirname, '../dist/index.html'))
@@ -101,7 +119,65 @@ app.whenReady().then(() => {
   tools = new ToolManager(path.join(app.getPath('userData'), 'plugins'))
   tools.loadPlugins()
   // deny all permission requests (camera, geolocation, ...) — not needed by the app
-  session.defaultSession.setPermissionRequestHandler((_wc, _p, cb) => cb(false))
+  // the only exception: audio-only capture from the app's main frame right after the voice-input button armed it
+  session.defaultSession.setPermissionRequestHandler((wc, perm, cb, details: any) => {
+    const types: string[] = details?.mediaTypes || []
+    const origin = String(details?.requestingUrl || '')
+    const ok = perm === 'media' && !!win && wc === win.webContents && details?.isMainFrame !== false && Date.now() < micArmedUntil
+      && types.length > 0 && types.every(t => t === 'audio') && (origin.startsWith('file:') || (!!process.env.VITE_DEV_SERVER_URL && origin.startsWith(process.env.VITE_DEV_SERVER_URL)))
+    if (ok) micArmedUntil = 0
+    cb(ok)
+  })
+  ipcMain.handle('mic:arm', async e => {
+    if (!win || e.sender !== win.webContents) return false
+    if (process.platform === 'darwin' && systemPreferences.getMediaAccessStatus('microphone') !== 'granted') {
+      if (!(await systemPreferences.askForMediaAccess('microphone'))) return false
+    }
+    micArmedUntil = Date.now() + 10_000
+    return true
+  })
+
+  protocol.handle('tqpreview', req => {
+    const id = new URL(req.url).pathname.replace(/^\//, '')
+    const html = previews.get(id)
+    if (html === undefined) return new Response('not found', { status: 404 })
+    // the same policy is also put inside the document (meta), in addition to the response header
+    const meta = `<meta http-equiv="Content-Security-Policy" content="${PREVIEW_CSP.replace(/; sandbox.*$/, '')}">`
+    const doc = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, m => m + meta) : meta + html
+    return new Response(doc, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': PREVIEW_CSP, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' } })
+  })
+  ipcMain.handle('preview:put', (e, html: string) => {
+    if (!win || e.sender !== win.webContents) throw new Error('denied')
+    const id = crypto.randomUUID()
+    previews.set(id, String(html).slice(0, 2_000_000))
+    while (previews.size > 50) previews.delete(previews.keys().next().value!)
+    return `tqpreview://p/${id}`
+  })
+  protocol.handle('tqocr', req => {
+    const f = path.basename(new URL(req.url).pathname)
+    if (!/^[a-z_]{3,12}\.traineddata(\.gz)?$/.test(f)) return new Response('bad name', { status: 400 })
+    const fp = path.join(ocrDir(), f.endsWith('.gz') ? f : f + '.gz')
+    if (!fs.existsSync(fp)) return new Response('not downloaded', { status: 404 })
+    return new Response(fs.readFileSync(fp), { headers: { 'Content-Type': 'application/octet-stream', 'Access-Control-Allow-Origin': '*' } })
+  })
+  ipcMain.handle('ocr:status', (_e, langs: string[]) => Object.fromEntries((langs || []).filter(l => OCR_LANG.test(l)).map(l => {
+    try { return [l, fs.statSync(path.join(ocrDir(), l + '.traineddata.gz')).size] } catch { return [l, 0] }
+  })))
+  // language data is downloaded through the API session (same proxy settings as model requests)
+  ipcMain.handle('ocr:download', async (_e, lang: string, source: string) => {
+    if (!OCR_LANG.test(lang)) return { ok: false, error: 'invalid language code' }
+    const url = String(source || '').replaceAll('{lang}', lang)
+    if (!/^https?:\/\//.test(url)) return { ok: false, error: 'only http(s) sources are allowed' }
+    try {
+      const res = await apiSession().fetch(url)
+      if (!res.ok) return { ok: false, error: `HTTP ${res.status}` }
+      const buf = Buffer.from(await res.arrayBuffer())
+      if (buf.length < 50_000) return { ok: false, error: `file too small (${buf.length} bytes)` }
+      fs.mkdirSync(ocrDir(), { recursive: true })
+      fs.writeFileSync(path.join(ocrDir(), lang + '.traineddata.gz'), buf)
+      return { ok: true, size: buf.length }
+    } catch (e: any) { return { ok: false, error: String(e?.message || e) } }
+  })
 
   ipcMain.handle('kv:get', (_e, k: string) => {
     if (!ALLOWED_KEYS.has(k)) throw new Error('invalid key')

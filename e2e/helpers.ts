@@ -42,11 +42,11 @@ export function httpLogFile(userData: string) { fs.mkdirSync(HTTP_LOG_DIR, { rec
 { let last = Date.now(); const f = () => path.join(HTTP_LOG_DIR, `worker-lag-${process.pid}.jsonl`)
   setInterval(() => { const now = Date.now(); if (now - last > 350) { try { fs.mkdirSync(HTTP_LOG_DIR, { recursive: true }); fs.appendFileSync(f(), JSON.stringify({ at: now, ms: now - last - 100 }) + '\n') } catch {} } last = now }, 100).unref() }
 
-export async function launch(userData: string, extraEnv: Record<string, string> = {}): Promise<{ app: ElectronApplication; page: Page; consoleErrors: string[] }> {
+export async function launch(userData: string, extraEnv: Record<string, string> = {}, extraArgs: string[] = []): Promise<{ app: ElectronApplication; page: Page; consoleErrors: string[] }> {
   const app = await electron.launch({
     executablePath: appPath(),
     args: [...(process.platform === 'linux' ? ['--no-sandbox', ...(process.env.E2E_EXTRA_ARGS || '').split(' ').filter(Boolean)] : []),
-      ...(process.env.E2E_NETLOG ? [`--log-net-log=${httpLogFile(userData).replace(/\.jsonl$/, '.netlog.json')}`] : [])],
+      ...(process.env.E2E_NETLOG ? [`--log-net-log=${httpLogFile(userData).replace(/\.jsonl$/, '.netlog.json')}`] : []), ...extraArgs],
     env: { ...process.env, TIDEQUILL_USER_DATA: userData, TIDEQUILL_HTTP_LOG: httpLogFile(userData), ELECTRON_ENABLE_LOGGING: '1', ...extraEnv },
   })
   const page = await app.firstWindow()

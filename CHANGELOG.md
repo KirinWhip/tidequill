@@ -3,7 +3,7 @@
 本文件记录各版本的变化，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 This file lists the changes in each version, in the style of Keep a Changelog.
 
-## [未发布 / Unreleased]（Round 2 · 阶段 A + B，计划随 v1.0.1 发布）
+## [未发布 / Unreleased]（Round 2 · 阶段 A + B + C，计划随 v1.0.1 发布）
 
 ### 阶段 A · 新增 / Added
 - 模型没有配置价格时，标题栏下方和消息底部显示“未配置价格”/“—”，点击后跳到 设置 → 用量 的价格表，可以一键添加该模型。
@@ -21,6 +21,41 @@ This file lists the changes in each version, in the style of Keep a Changelog.
 - 单个换行会显示为换行（remark-breaks），引用块里的诗句可以逐行显示。
 - 预置 DeepSeek 模型改为 `deepseek-flash`、`deepseek-v4-pro`，并补充了价格。
 - README 按“简介 / 功能 / 安装 / 使用 / 开发 / 许可证”重新组织，新增英文版 README.en.md，版本历史移到本文件。
+
+### 阶段 C（功能）
+- **联网搜索**（第 14 项）：
+  - 支持 Tavily、SearXNG（自建，需启用 JSON 输出）、Brave Search，以及 Bing Web Search v7 兼容端点。微软已于 2025-08-11 停止官方 Bing Search API，设置页对此有明确提示。
+  - 新增 设置 → 联网搜索：可选择服务、填写密钥（可显示 / 隐藏）、自定义接口地址、设置结果数量，并提供“测试搜索”按钮。
+  - 输入框工具栏新增“联网搜索”开关。开启后，发送前先搜索用户的问题，把结果附加到本次发给模型的消息中，不写进对话正文。
+  - 回复中的 [1] 等编号渲染为可点击的引用标记，下方列出“来源”卡片（标题、域名），均链接到原网页。
+  - 搜索失败时在回复上方说明原因，回复照常生成。
+  - 搜索密钥用 safeStorage 加密保存；不含密钥的备份会去掉它们，恢复时保留当前密钥。搜索请求经主进程的 API 会话发出，渲染进程自身没有网络权限。
+- **附件**（第 15 项）：
+  - 新增 XLSX 和 PPTX 文本提取。用 fflate（MIT）解压，再用自写的解析器读取 XML：XLSX 输出工作表名和单元格值（共享字符串、行内字符串、布尔值；公式不重新计算，没有缓存值时显示公式本身）；PPTX 输出每页文字和演讲者备注。
+  - 旧版 .xls / .ppt / .doc 会明确提示不支持。
+  - 新增附件大小上限（默认 20 MB）和文本字符上限（默认 200000），均可在 设置 → 对话 中修改。文件超过上限时，提示中显示文件名、文件大小和当前上限；文本被截断时，附件标签上标出“已截断”。
+  - 可选的图片文字识别（OCR），基于 tesseract.js（Apache-2.0），默认关闭：
+    - worker 和 wasm 核心随应用打包在 dist/ocr 中，不从 CDN 加载。
+    - 语言数据（.traineddata）不随应用分发，在设置中按需下载（经主进程，与模型请求使用相同的代理设置），保存在数据目录的 ocr 文件夹，通过 tqocr: 协议提供给 worker。
+    - 识别在本机进行。
+  - THIRD_PARTY_NOTICES 已更新（新增 fflate、tesseract.js、tesseract.js-core，以及 worker 内嵌组件的许可头和语言数据的来源说明）。
+- **HTML / SVG 沙箱预览**（第 16 项）：
+  - 回复中的 html / svg 代码块可以预览。文档由主进程通过 tqpreview: 协议提供，响应头和文档内 meta 中都带有严格的 CSP（`default-src 'none'`，只允许内联脚本和样式，禁止任何网络请求）。
+  - 页面嵌在 `<iframe sandbox="allow-scripts">` 中，不带 allow-same-origin，因此是不透明来源。
+  - 应用 CSP 的 frame-src 只允许 tqpreview:；主进程禁止子框架导航到其他地址。
+  - E2E 用一段攻击脚本逐项验证：访问 parent / top 的 DOM 报 SecurityError；window.api、require、process 都是 undefined；cookie 和 localStorage 被拒绝；window.open 返回 null；无法让顶层页面跳转；fetch 被 CSP 拦截，模拟服务器没有收到请求。
+- **多模型对比**（第 17 项）：
+  - 对话标题栏新增“多模型对比”按钮，最多再添加 3 个模型。
+  - 发送后各模型并行流式回答，并排显示；可以选择“采用此回答”，后续对话的上下文只包含被采用的回答。
+  - 对比模式下不调用工具。
+- **对话内查找**（第 18 项）：
+  - `Ctrl+F` 打开查找栏，不区分大小写，用 CSS Custom Highlight API 高亮全部匹配，当前匹配单独着色并滚动到可见位置。
+  - 显示“当前 / 总数”；Enter 跳到下一个，Shift+Enter 跳到上一个，Esc 关闭。
+- **语音输入**（第 19 项）：
+  - 可选功能，默认关闭。录音使用 MediaRecorder（webm/opus），通过 OpenAI 兼容的 `/audio/transcriptions` 接口转写，转写结果插入输入框。HTTP 桥接层现在支持二进制请求体。
+  - 麦克风权限：只有点击麦克风按钮后，主进程才会在 10 秒内允许一次仅含音频、来自应用主框架的请求；其他请求（包括视频，以及页面脚本自己发起的请求）一律拒绝。
+  - 没有使用 Web Speech API。
+- **快捷键**：新增 `Ctrl+F`。
 
 ### 阶段 B（界面）
 - **自绘标题栏**（第 8 项）：

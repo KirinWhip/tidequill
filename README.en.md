@@ -10,9 +10,9 @@
 
 | Light · 中文 | Dark · 中文 |
 |---|---|
-| ![](screenshots/r2-B/light-zh.png) | ![](screenshots/r2-B/dark-zh.png) |
+| ![](screenshots/r2-C/light-zh.png) | ![](screenshots/r2-C/dark-zh.png) |
 | **Light · English** | **Dark · English** |
-| ![](screenshots/r2-B/light-en.png) | ![](screenshots/r2-B/dark-en.png) |
+| ![](screenshots/r2-C/light-en.png) | ![](screenshots/r2-C/dark-en.png) |
 
 ## Features
 
@@ -34,10 +34,15 @@
 - **Usage & cost**: token counts and estimated cost for each message and each conversation. The price table is editable. Models with no price show "No price set", and clicking it takes you to the price table to add one.
 - **Request transparency**: Conversation settings → "View request content" shows the system prompt, tool definitions and messages (bytes plus a token estimate) and the full JSON body of the last request. The API key is never shown. By default no system prompt and no tool definitions are sent.
 - **Attachments & images**:
-  - PDF, DOCX, TXT/MD/CSV/JSON and code files; their text is extracted into the context.
-  - Images go to vision models.
+  - PDF, DOCX, **XLSX, PPTX**, TXT/MD/CSV/JSON and code files; their text is extracted into the context. XLSX gives the cell values of every sheet (formulas are not recalculated; the value saved in the file is used). PPTX gives the text and speaker notes of each slide. Legacy .xls / .ppt / .doc are not supported.
+  - Files over the size limit (20 MB by default, changeable in Settings → Chat) get a clear message with the file size and the limit.
+  - Images go to vision models. Optional local text recognition (OCR with tesseract.js), off by default; language data is downloaded on demand.
   - Image generation uses the OpenAI Images API.
-  - Excel and PPT files are **not** supported, and there is **no** built-in web search. You can add web search through MCP or a plugin.
+- **Web search**: Tavily, SearXNG (self-hosted), Brave Search, and Bing Web Search compatible endpoints (Microsoft retired the official Bing Search API on 2025-08-11). One toggle in the composer toolbar; [1]-style markers in the reply and the "Sources" list link to the pages. Search keys are encrypted with safeStorage and requests are made by the main process.
+- **Code preview**: HTML / SVG code blocks in replies can be previewed in a sandbox (an isolated iframe; scripts cannot reach the app, keys or the network).
+- **Compare models**: send one question to up to 4 models and see the replies side by side; the answer you choose stays in the context.
+- **Find in conversation**: `Ctrl+F` highlights all matches; Enter / Shift+Enter to step through them.
+- **Voice input** (optional): transcription through an OpenAI-compatible `/audio/transcriptions` API (e.g. whisper-1). Web Speech is not used.
 - **Plugins / MCP**: MCP servers over stdio or HTTP (Streamable HTTP with SSE fallback), plus a simple CommonJS plugin API. Every tool call asks you to confirm.
 - **Data**:
   - Local JSON storage, with API keys encrypted by safeStorage.
@@ -66,7 +71,7 @@ Download the Windows installer (`Tidequill-Setup-<version>-x64.exe`) or the port
 
 1. On first launch, pick a provider, enter your API key, then click **Test connection** and **Get started**.
 2. Choose the provider and model at the top. **Deep thinking** turns reasoning on. The gear icon opens conversation settings: parameters, folder, tags and the request view.
-3. Shortcuts: `Ctrl+N` new chat, `Ctrl+K` search, `Ctrl+,` settings, `Ctrl+D` deep thinking, `Ctrl+Shift+S` conversation settings, `Ctrl+Shift+P` system prompt, `Ctrl+E` export, `Esc` close. Button tooltips also show their shortcuts.
+3. Shortcuts: `Ctrl+N` new chat, `Ctrl+K` search, `Ctrl+,` settings, `Ctrl+D` deep thinking, `Ctrl+Shift+S` conversation settings, `Ctrl+Shift+P` system prompt, `Ctrl+E` export, `Ctrl+F` find in conversation, `Esc` close. Button tooltips also show their shortcuts.
 4. Settings → Providers:
    - Status badges show the real connection state, and hovering shows the reason.
    - The API key can be shown or hidden, and "Test connection" reports its result inline.
@@ -75,6 +80,10 @@ Download the Windows installer (`Tidequill-Setup-<version>-x64.exe`) or the port
    - The default model applies to new chats only.
 5. The bar above the input shows the estimated context the next request will use, against the model window, and warns above 80%. Edit the windows in Settings → Usage.
 6. Settings → Chat → Reading width offers narrow, standard or wide. Import and export are in Settings → Data.
+7. Web search: in Settings → Web search pick a service and enter its key (for SearXNG enter the URL and enable the json format in its settings.yml), click "Test search", then turn on the "Web search" toggle under the input box. Results are only added to that request, not saved into the conversation text.
+8. Image text recognition: Settings → Chat → Image text recognition, tick the languages and click "Download" (English about 2.9 MB, Simplified Chinese about 1.7 MB; the default source is @tesseract.js-data on jsDelivr and can be changed), then tick "Recognize text in added images". Recognition runs locally.
+9. Voice input: Settings → Chat → Voice input, turn it on and choose an OpenAI-compatible provider and model (e.g. whisper-1). Click the microphone under the input box to record and again to stop and transcribe. The app only asks for the microphone after you click the button.
+10. Compare models: click "Compare models" in the conversation header and add up to 3 models; turn compare off to go back to a single model.
 
 ### Why are input tokens higher than my message?
 A request can also carry:

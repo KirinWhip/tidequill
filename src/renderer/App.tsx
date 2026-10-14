@@ -5,6 +5,7 @@ import { streamChat, listModels, summarizeTitle } from '../shared/providers'
 import type { RequestInfo } from '../shared/reqdebug'
 import { ProviderError, withRetry } from '../shared/errors'
 import { estimateMessages, estimateTokens } from '../shared/usage'
+import { webSearch, searchContext, SearchError, type Citation } from '../shared/websearch'
 import { branchAt, forkConversation, switchBranch } from '../shared/branches'
 import { makeBackup, parseBackup, restoreSettings, makeSyncPayload, mergeSync, BACKUP_KEYS } from '../shared/sync'
 import { api, storage, bridgeFetch, setRequestTimeout } from './api'
@@ -40,6 +41,7 @@ export default function App() {
   useEffect(() => { if (modal !== 'settings') setSettingsNav({}) }, [modal])
   const [lastRequests, setLastRequests] = useState<Record<string, RequestInfo>>({})
   const [busyId, setBusyId] = useState<string>('')
+  const [searchingId, setSearchingId] = useState<string>('')
   const [toast, setToast] = useState('')
   const [update, setUpdate] = useState<any>(null)
   const [systemStatus, setSystemStatus] = useState<any>({})
@@ -132,6 +134,73 @@ export default function App() {
   const cur = convs.find(c => c.id === curId)
   const convsRef = useRef(convs); convsRef.current = convs
 
+  /** web search for the last user message (when the toolbar toggle is on); never throws */
+  const doSearch = async (id: string, history: Message[], signal: AbortSignal): Promise<{ citations?: Citation[]; searchQuery?: string; searchError?: string; userId?: string; extra?: string }> => {
+    const ws = settings?.webSearch
+    const lastUser = [...history].reverse().find(m => m.role === 'user')
+    if (!ws?.enabled || !lastUser?.content.trim()) return {}
+    const q = lastUser.content.trim()
+    setSearchingId(id)
+    try {
+      const citations = await webSearch(ws, q, bridgeFetch, signal)
+      if (!citations.length) return { searchQuery: q, searchError: t.searchNoResults }
+      return { citations, searchQuery: q, userId: lastUser.id, extra: searchContext(citations, q, lang) }
+    } catch (e: any) {
+      if (e?.name === 'AbortError') throw e
+      const code = e instanceof SearchError ? e.code : e instanceof ProviderError ? (e.code === 'timeout' ? 'network' : 'network') : 'network'
+      return { searchQuery: q, searchError: `${(t as any)['searchErr_' + code] || ''}${e?.message ? ' (' + String(e.message).slice(0, 200) + ')' : ''}` }
+    } finally { setSearchingId('') }
+  }
+  /** messages sent to the model: last N, without un-chosen compare replies, search results appended to the asking message */
+  const buildCtx = (msgs: Message[], contextLength: number, s: { userId?: string; extra?: string }) => {
+    const ctx = msgs.filter(m => !m.compareGroup || m.compareChosen).slice(-Math.max(1, contextLength))
+    while (ctx.length && ctx[0].role === 'tool') ctx.shift()
+    return s.extra ? ctx.map(m => m.id === s.userId ? { ...m, content: m.content + s.extra } : m) : ctx
+  }
+
+  /** compare mode: the same question to the conversation model plus conv.compareModels, streamed in parallel */
+  const runCompare = async (id: string, history: Message[]) => {
+    if (!settings) return
+    const conv = convsRef.current.find(c => c.id === id) || cur!
+    const targets = [{ providerId: conv.providerId, model: conv.model }, ...(conv.compareModels || [])].slice(0, 4)
+    const P = conv.params || {}
+    const temperature = P.temperature ?? settings.temperature, topP = P.topP ?? settings.topP
+    const maxTokens = P.maxTokens ?? settings.maxTokens, contextLength = P.contextLength ?? settings.contextLength
+    const ctrl = new AbortController(); abortRef.current = ctrl; setBusyId(id)
+    patchConv(id, c => ({ ...c, messages: history }))
+    const setMsg = (aid: string, patch: Partial<Message>) => patchConv(id, c => ({ ...c, messages: c.messages.map(m => m.id === aid ? { ...m, ...patch } : m) }))
+    try {
+      const s = await doSearch(id, history, ctrl.signal)
+      const ctx = buildCtx(history, contextLength, s)
+      const gid = uid()
+      const list: Message[] = targets.map((tg, i) => ({ id: uid(), role: 'assistant', content: '', model: tg.model, compareGroup: gid, compareChosen: i === 0, createdAt: Date.now(),
+        citations: s.citations, searchQuery: s.searchQuery, searchError: s.searchError }))
+      patchConv(id, c => ({ ...c, messages: [...history, ...list] }))
+      await Promise.all(targets.map(async (tg, i) => {
+        const aid = list[i].id
+        const provider = settings.providers.find(p => p.id === tg.providerId)
+        let text = '', reasoning = ''
+        try {
+          if (!provider) throw new ProviderError('bad_request', `provider ${tg.providerId} not found`)
+          const res = await withRetry(() => {
+            text = ''; reasoning = ''
+            return streamChat(provider, conv.systemPrompt, ctx, { model: tg.model, temperature, topP, maxTokens, signal: ctrl.signal, fetchImpl: bridgeFetch, reasoning: !!conv.reasoning,
+              onReasoning: r => { reasoning += r; setMsg(aid, { reasoning }) }, onDelta: d => { text += d; setMsg(aid, { content: text }) } })
+          }, { retries: settings.retries, baseMs: settings.retryBaseMs, signal: ctrl.signal }, () => !text && !reasoning)
+          setMsg(aid, { content: res.text, reasoning: res.reasoning || reasoning || undefined, usage: res.usage || { input: estimateMessages(ctx, conv.systemPrompt), output: estimateTokens(res.text + (res.reasoning || '')), estimated: true } })
+        } catch (e: any) {
+          if (e?.name === 'AbortError') return
+          const pe = e instanceof ProviderError ? e : null
+          setMsg(aid, { content: text, errorCode: pe?.code || 'unknown', error: pe ? (pe.status ? `HTTP ${pe.status} ` : '') + pe.detail : String(e?.message || e) })
+        }
+      }))
+    } catch { /* aborted during search */ } finally { setBusyId(''); abortRef.current = null }
+  }
+  const chooseCompare = (msgId: string) => cur && patchConv(cur.id, c => {
+    const g = c.messages.find(m => m.id === msgId)?.compareGroup
+    return g ? { ...c, messages: c.messages.map(m => m.compareGroup === g ? { ...m, compareChosen: m.id === msgId } : m) } : c
+  })
+
   /** run the model on conversation `id` with given history; handles retries, usage, reasoning and the tool-call loop */
   const runModel = async (id: string, history: Message[]) => {
     if (!settings) return
@@ -146,14 +215,14 @@ export default function App() {
     const tools = settings.toolsEnabled ? (await api.listTools()).filter((x: ToolDef) => settings.builtinTools || !x.name.startsWith('builtin__')) : []
     const setMsg = (aid: string, patch: Partial<Message>) => patchConv(id, c => ({ ...c, messages: c.messages.map(m => m.id === aid ? { ...m, ...patch } : m) }))
     try {
+      const s = await doSearch(id, history, ctrl.signal)
       for (let round = 0; round < 8; round++) {
         const aid = uid()
-        const asst: Message = { id: aid, role: 'assistant', content: '', model: conv.model, createdAt: Date.now() }
+        const asst: Message = { id: aid, role: 'assistant', content: '', model: conv.model, createdAt: Date.now(), ...(round === 0 ? { citations: s.citations, searchQuery: s.searchQuery, searchError: s.searchError } : {}) }
         msgs = [...msgs, asst]
         patchConv(id, c => ({ ...c, messages: msgs, updatedAt: Date.now() }))
         let text = '', reasoning = ''
-        const ctx = msgs.slice(0, -1).slice(-Math.max(1, contextLength))
-        while (ctx.length && ctx[0].role === 'tool') ctx.shift()
+        const ctx = buildCtx(msgs.slice(0, -1), contextLength, s)
         const res = await withRetry(() => {
           text = ''; reasoning = ''
           return streamChat(provider, conv.systemPrompt, ctx, {
@@ -207,7 +276,7 @@ export default function App() {
   const send = async (content: string, images: string[], attachments: Attachment[], quote?: string) => {
     if (!cur || busyId) return
     const m: Message = { id: uid(), role: 'user', content, quote, images: images.length ? images : undefined, attachments: attachments.length ? attachments : undefined, createdAt: Date.now() }
-    await runModel(cur.id, [...cur.messages, m])
+    await (cur.compareModels?.length ? runCompare : runModel)(cur.id, [...cur.messages, m])
   }
   /** regenerate: keep the old reply as a branch at that position */
   const regenerate = (msgId: string) => {
@@ -218,7 +287,7 @@ export default function App() {
     const next = branchAt(cur, u + 1, [])
     patchConv(cur.id, () => next)
     convsRef.current = convsRef.current.map(c => c.id === cur.id ? next : c)
-    runModel(cur.id, next.messages)
+    ;(cur.compareModels?.length ? runCompare : runModel)(cur.id, next.messages)
   }
   /** edit & resend: the edited message starts a new branch */
   const editResend = (msgId: string, content: string) => {
@@ -228,7 +297,7 @@ export default function App() {
     const next = branchAt(cur, idx, [edited])
     patchConv(cur.id, () => next)
     convsRef.current = convsRef.current.map(c => c.id === cur.id ? next : c)
-    runModel(cur.id, next.messages)
+    ;(cur.compareModels?.length ? runCompare : runModel)(cur.id, next.messages)
   }
   const deleteMsg = (msgId: string) => cur && patchConv(cur.id, c => {
     const i = c.messages.findIndex(m => m.id === msgId)
@@ -317,7 +386,7 @@ export default function App() {
         onExportMd={c => api.saveFile(`${c.title}.md`, conversationToMarkdown(c, { model: t.exportedModel, attachment: t.attachment }))}
         update={update} onUpdate={() => api.downloadUpdate().then(() => api.installUpdate())} />
       <main className="main">
-        {cur ? <ChatView key={cur.id} conv={cur} convs={convs} settings={settings} dark={dark} busy={busyId === cur.id} prompts={prompts}
+        {cur ? <ChatView key={cur.id} conv={cur} convs={convs} settings={settings} dark={dark} busy={busyId === cur.id} searching={searchingId === cur.id} onChooseCompare={chooseCompare} prompts={prompts}
           onSend={send} onStop={() => abortRef.current?.abort()} onRegenerate={regenerate} onEditResend={editResend} onDeleteMsg={deleteMsg}
           onFork={fork} onSwitchBranch={(pos, idx) => patchConv(cur.id, c => switchBranch(c, pos, idx))} onOpenConv={setCurId}
           onPatch={fn => patchConv(cur.id, fn)} onSettings={saveSettings} onConvSettings={() => setConvSettingsId(cur.id)}

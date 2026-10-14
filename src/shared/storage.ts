@@ -1,5 +1,9 @@
 import type { Conversation, Folder, GalleryImage, Persona, PromptItem, Settings } from './types'
 import { DEFAULT_PRICES, DEFAULT_CONTEXT_WINDOWS } from './usage'
+import { DEFAULT_WEB_SEARCH } from './websearch'
+import { DEFAULT_STT } from './stt'
+
+export const DEFAULT_OCR_SOURCE = 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/{lang}/4.0.0_best_int/{lang}.traineddata.gz'
 
 export interface KV {
   get(key: string): Promise<any>
@@ -32,6 +36,8 @@ export function defaultSettings(): Settings {
     mcpServers: [], toolsEnabled: true, builtinTools: false, autoTitle: true, readingWidth: 'standard', contextWindows: DEFAULT_CONTEXT_WINDOWS, codeLineNumbers: false, codeCollapseLines: 30,
     topP: 1, retries: 2, retryBaseMs: 1000, showUsage: true, prices: DEFAULT_PRICES,
     webdav: { url: '', username: '', password: '', enabled: false },
+    webSearch: { ...DEFAULT_WEB_SEARCH }, stt: { ...DEFAULT_STT }, ocr: { enabled: false, langs: ['eng', 'chi_sim'], source: DEFAULT_OCR_SOURCE },
+    maxAttachmentMB: 20, maxAttachmentChars: 200000,
     globalShortcut: 'CommandOrControl+Shift+Space', tray: true, launchAtLogin: false, autoCheckUpdate: true, onboarded: false,
   }
 }
@@ -53,7 +59,8 @@ export class Storage {
     const d = defaultSettings()
     if (!s) return d
     // merge new defaults in, keep user providers
-    return { ...d, ...s, providers: s.providers?.length ? s.providers : d.providers }
+    return { ...d, ...s, providers: s.providers?.length ? s.providers : d.providers,
+      webSearch: { ...d.webSearch!, ...(s.webSearch || {}) }, stt: { ...d.stt!, ...(s.stt || {}) }, ocr: { ...d.ocr!, ...(s.ocr || {}) } }
   }
   saveSettings(s: Settings) { return this.kv.set('settings', s) }
 

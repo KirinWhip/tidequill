@@ -1,4 +1,5 @@
 import type { Conversation } from './types'
+import { SEARCH_KEY_FIELDS } from './websearch'
 
 export const BACKUP_FORMAT = 'tidequill-backup'
 /** format id written by pre-1.0 versions (before the rename), still accepted on restore */
@@ -9,7 +10,9 @@ export const BACKUP_KEYS = ['settings', 'conversations', 'personas', 'prompts', 
 /** strip secrets (API keys, WebDAV password) from settings unless explicitly included */
 export function scrubSettings(s: any) {
   if (!s) return s
-  return { ...s, providers: (s.providers || []).map((p: any) => ({ ...p, apiKey: '' })), webdav: s.webdav ? { ...s.webdav, password: '' } : s.webdav }
+  const out = { ...s, providers: (s.providers || []).map((p: any) => ({ ...p, apiKey: '' })), webdav: s.webdav ? { ...s.webdav, password: '' } : s.webdav }
+  if (s.webSearch) out.webSearch = { ...s.webSearch, ...Object.fromEntries(SEARCH_KEY_FIELDS.map(k => [k, ''])) }
+  return out
 }
 
 export function makeBackup(data: Record<string, any>, includeSecrets = false): Backup {
@@ -28,7 +31,9 @@ export function parseBackup(text: string): Backup {
 export function restoreSettings(current: any, incoming: any) {
   if (!incoming) return current
   const providers = (incoming.providers || []).map((p: any) => ({ ...p, apiKey: p.apiKey || current?.providers?.find((c: any) => c.id === p.id)?.apiKey || '' }))
-  return { ...incoming, providers, webdav: { ...(incoming.webdav || {}), password: incoming.webdav?.password || current?.webdav?.password || '' } }
+  const out: any = { ...incoming, providers, webdav: { ...(incoming.webdav || {}), password: incoming.webdav?.password || current?.webdav?.password || '' } }
+  if (incoming.webSearch || current?.webSearch) out.webSearch = { ...(current?.webSearch || {}), ...(incoming.webSearch || {}), ...Object.fromEntries(SEARCH_KEY_FIELDS.map(k => [k, incoming.webSearch?.[k] || current?.webSearch?.[k] || ''])) }
+  return out
 }
 
 /** merge conversations from two devices: union by id, newer updatedAt wins, deletions tracked by tombstones */
