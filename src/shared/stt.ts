@@ -1,3 +1,4 @@
+import { randomToken } from './random'
 /** Speech-to-text through an OpenAI-compatible POST {baseURL}/audio/transcriptions (multipart/form-data).
  *  Works with OpenAI (whisper-1, gpt-4o-mini-transcribe, gpt-4o-transcribe) and compatible servers
  *  (e.g. Groq, a local faster-whisper / LocalAI server). The request goes through the main-process bridge. */
@@ -8,7 +9,7 @@ export const DEFAULT_STT: SttConfig = { enabled: false, providerId: '', model: '
 
 const enc = new TextEncoder()
 /** builds a multipart body as bytes (the bridge carries a Uint8Array body to the main process) */
-export function buildMultipart(fields: Record<string, string>, file: { name: string; type: string; data: Uint8Array }, boundary = 'tq' + Math.random().toString(36).slice(2) + Date.now().toString(36)): { body: Uint8Array; contentType: string } {
+export function buildMultipart(fields: Record<string, string>, file: { name: string; type: string; data: Uint8Array }, boundary = 'tq' + randomToken(12)): { body: Uint8Array; contentType: string } {
   const chunks: Uint8Array[] = []
   for (const [k, v] of Object.entries(fields)) if (v) chunks.push(enc.encode(`--${boundary}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`))
   chunks.push(enc.encode(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${file.name}"\r\nContent-Type: ${file.type}\r\n\r\n`))

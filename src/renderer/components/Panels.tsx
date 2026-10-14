@@ -20,8 +20,9 @@ export function SettingsPanel({ s, t, onChange, actions, initialTab, priceModel 
   const [tab, setTab] = useState<Tab>((initialTab as Tab) || 'providers')
   // every change is persisted immediately; show a short "saved" confirmation
   const [savedAt, setSavedAt] = useState(0)
-  useEffect(() => { if (!savedAt) return; const h = setTimeout(() => setSavedAt(0), 1800); return () => clearTimeout(h) }, [savedAt])
-  const set = (p: Partial<Settings>) => { onChange({ ...s, ...p }); setSavedAt(Date.now()) }
+  useEffect(() => { if (!savedAt) return; const h = setTimeout(() => setSavedAt(0), 2500); return () => clearTimeout(h) }, [savedAt])
+  const [saveCount, setSaveCount] = useState(0)
+  const set = (p: Partial<Settings>) => { onChange({ ...s, ...p }); setSavedAt(Date.now()); setSaveCount(n => n + 1) }
   const [msg, setMsg] = useState<any>('')
   const [secure, setSecure] = useState(true)
   const [version, setVersion] = useState('')
@@ -37,7 +38,7 @@ export function SettingsPanel({ s, t, onChange, actions, initialTab, priceModel 
   const sys = actions.systemStatus || {}
   return (
     <div className="panel">
-      <h2 className="withflag">{t.settings}{savedAt > 0 && <span className="savedflag" data-testid="saved-flag" role="status"><Check size={13} />{t.savedFlag}</span>}</h2>
+      <h2 className="withflag" data-testid="settings-title" data-save-count={saveCount}>{t.settings}{savedAt > 0 && <span className="savedflag" data-testid="saved-flag" role="status"><Check size={13} />{t.savedFlag}</span>}</h2>
       <div className="tabs">{tabs.map(k => <button key={k} data-tab={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{t[k]}</button>)}</div>
       {tab === 'providers' && <ProvidersTab s={s} t={t} set={set} actions={actions} secure={secure} />}
       {tab === 'searchTab' && <SearchTab s={s} t={t} set={set} secure={secure} />}

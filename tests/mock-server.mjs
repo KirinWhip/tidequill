@@ -78,14 +78,20 @@ export function startMockServer(port = 0, opts = {}) {
       if (u.pathname.endsWith('/audio/transcriptions')) {
         const buf = Buffer.concat(raw)
         const ct = req.headers['content-type'] || ''
-        const boundary = /boundary=(.+)$/.exec(ct)?.[1]
-        const fields = {}; let fileName = '', fileBytes = 0, fileType = ''
+        // linear-time multipart parsing (no backtracking regexes); field names go into a Map, never object keys
+        const bi = ct.indexOf('boundary=')
+        const boundary = bi >= 0 ? ct.slice(bi + 9).split(';')[0].trim() : ''
+        const fields = new Map(); let fileName = '', fileBytes = 0, fileType = ''
+        const attr = (head, name) => { const k = head.indexOf(name + '="'); if (k < 0) return ''; const st = k + name.length + 2; const en = head.indexOf('"', st); return en < 0 ? '' : head.slice(st, en) }
         if (boundary) for (const part of buf.toString('latin1').split('--' + boundary)) {
-          const m = /name="([^"]+)"(?:; filename="([^"]+)")?[\s\S]*?\r\n\r\n([\s\S]*)\r\n$/.exec(part)
-          if (!m) continue
-          if (m[2]) { fileName = m[2]; fileBytes = m[3].length; fileType = /Content-Type: ([^\r\n]+)/.exec(part)?.[1] || '' } else fields[m[1]] = m[3]
+          const sep = part.indexOf('\r\n\r\n'); if (sep < 0) continue
+          const head = part.slice(0, sep); let body = part.slice(sep + 4)
+          if (body.endsWith('\r\n')) body = body.slice(0, -2)
+          const name = attr(head, ' name') || attr(head, ';name'); if (!name) continue
+          const fn = attr(head, 'filename')
+          if (fn) { fileName = fn; fileBytes = body.length; const ci = head.indexOf('Content-Type: '); fileType = ci >= 0 ? head.slice(ci + 14).split('\r\n')[0] : '' } else fields.set(name, body)
         }
-        transcriptions.push({ contentType: ct.split(';')[0], model: fields.model, language: fields.language, fileName, fileType, fileBytes, auth: req.headers.authorization })
+        transcriptions.push({ contentType: ct.split(';')[0], model: fields.get('model'), language: fields.get('language'), fileName, fileType, fileBytes, auth: req.headers.authorization })
         if (!fileBytes) return json(400, { error: { message: 'file is empty' } })
         return json(200, { text: TRANSCRIPT })
       }
