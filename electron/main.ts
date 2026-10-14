@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, session, shell, Menu, safeStorage, clipboard, Tray, globalShortcut, nativeImage, nativeTheme, protocol, systemPreferences, utilityProcess } from 'electron'
+import { app, BrowserWindow, screen, ipcMain, dialog, session, shell, Menu, safeStorage, clipboard, Tray, globalShortcut, nativeImage, nativeTheme, protocol, systemPreferences, utilityProcess } from 'electron'
 import crypto from 'node:crypto'
 import { autoUpdater } from 'electron-updater'
 import path from 'node:path'
@@ -78,9 +78,28 @@ function titleBarOptions(): Electron.BrowserWindowConstructorOptions {
   return { titleBarStyle: 'hidden', titleBarOverlay: { ...TB_COLORS[initialDark() ? 'dark' : 'light'], height: TITLEBAR_HEIGHT } }
 }
 
+/** Round 3 · A2: a window whose minimum size is larger than the work area cannot be maximized into it
+ *  (at 150 % on a small screen 800×500 DIP is more than the work area), so Windows lets it overflow the screen.
+ *  Clamp the minimum size and the initial size to the work area of the display the window is on. */
+const MIN_W = 800, MIN_H = 500
+function fitToWorkArea(w: BrowserWindow) {
+  const wa = screen.getDisplayMatching(w.getBounds()).workArea
+  w.setMinimumSize(Math.min(MIN_W, wa.width), Math.min(MIN_H, wa.height))
+  if (w.isMaximized() || w.isFullScreen()) return
+  const b = w.getBounds()
+  const width = Math.min(b.width, wa.width), height = Math.min(b.height, wa.height)
+  const x = Math.min(Math.max(b.x, wa.x), wa.x + wa.width - width), y = Math.min(Math.max(b.y, wa.y), wa.y + wa.height - height)
+  if (width !== b.width || height !== b.height || x !== b.x || y !== b.y) w.setBounds({ x, y, width, height })
+}
+export function windowGeometry(w: BrowserWindow) {
+  const d = screen.getDisplayMatching(w.getBounds())
+  return { maximized: w.isMaximized(), bounds: w.getBounds(), content: w.getContentBounds(), workArea: d.workArea, scale: d.scaleFactor }
+}
+
 function createWindow() {
+  const wa = screen.getPrimaryDisplay().workArea
   win = new BrowserWindow({
-    width: 1280, height: 820, minWidth: 800, minHeight: 500,
+    width: Math.min(1280, wa.width), height: Math.min(820, wa.height), minWidth: Math.min(MIN_W, wa.width), minHeight: Math.min(MIN_H, wa.height),
     title: 'Tidequill',
     ...titleBarOptions(),
     icon: resourcePath('icon.png'),
@@ -93,6 +112,10 @@ function createWindow() {
     },
   })
   Menu.setApplicationMenu(null)
+  { const w = win; fitToWorkArea(w); w.on('moved', () => fitToWorkArea(w)); const onMetrics = () => { if (!w.isDestroyed()) fitToWorkArea(w) }
+    screen.on('display-metrics-changed', onMetrics); screen.on('display-added', onMetrics); screen.on('display-removed', onMetrics)
+    w.on('closed', () => { screen.off('display-metrics-changed', onMetrics); screen.off('display-added', onMetrics); screen.off('display-removed', onMetrics) })
+    if (process.env.TIDEQUILL_GEOMETRY_LOG) for (const ev of ['maximize', 'unmaximize', 'resize'] as const) w.on(ev as any, () => { try { fs.appendFileSync(process.env.TIDEQUILL_GEOMETRY_LOG!, JSON.stringify({ ev, ...windowGeometry(w) }) + '\n') } catch {} }) }
   win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) shell.openExternal(url); return { action: 'deny' } })
   // sub frames (HTML previews) may not navigate anywhere else
   win.webContents.on('will-frame-navigate', e => { if (!e.isMainFrame && !e.url.startsWith('tqpreview:')) e.preventDefault() })
