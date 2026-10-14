@@ -84,3 +84,19 @@ for (const scale of [1, 1.25, 1.5]) {
     expect(r.content.width).toBeLessThanOrEqual(wa.width + 1)
   })
 }
+
+test('fallback: if the maximized client area overflows, the window is sized to the work area instead; maximize again restores', async () => {
+  test.skip(process.platform !== 'win32', 'needs a real window manager (Windows runner)')
+  ;({ app, page } = await launch(seedUserData({ mockUrl: mock.url }), { TIDEQUILL_TEST_MAX_OVERFLOW: '8' }))
+  const geo = () => app.evaluate(({ BrowserWindow }) => (globalThis as any).__tidequillGeometry(BrowserWindow.getAllWindows()[0]))
+  const before = (await geo()).bounds
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].maximize())
+  await expect.poll(async () => (await geo()).pseudoMaximized).toBe(true)
+  const g = await geo()
+  expect(g.maximized).toBe(false)
+  expect(g.content).toEqual(g.workArea)
+  await expect(page.getByRole('button', { name: /关于/ }).last()).toBeInViewport({ ratio: 1 })
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].maximize())
+  await expect.poll(async () => (await geo()).pseudoMaximized).toBe(false)
+  await expect.poll(async () => (await geo()).bounds).toEqual(before)
+})

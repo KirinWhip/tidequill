@@ -91,9 +91,32 @@ function fitToWorkArea(w: BrowserWindow) {
   const x = Math.min(Math.max(b.x, wa.x), wa.x + wa.width - width), y = Math.min(Math.max(b.y, wa.y), wa.y + wa.height - height)
   if (width !== b.width || height !== b.height || x !== b.x || y !== b.y) w.setBounds({ x, y, width, height })
 }
+/** Defensive fallback for the reported overflow: if a maximized window's client area extends past the work area
+ *  (seen on some Windows setups with frameless windows; not reproducible on the CI runner, where Electron insets
+ *  correctly), replace the native maximize with a window sized exactly to the work area. Clicking maximize again
+ *  (or double-clicking the title bar) restores the previous bounds. TIDEQUILL_TEST_MAX_OVERFLOW forces the
+ *  detection in E2E tests. */
+const pseudoMax = new WeakMap<BrowserWindow, Electron.Rectangle>()
+export function maximizeOverflow(w: BrowserWindow): number {
+  const wa = screen.getDisplayMatching(w.getBounds()).workArea, c = w.getContentBounds()
+  const forced = Number(process.env.TIDEQUILL_TEST_MAX_OVERFLOW || 0)
+  return Math.max(forced, wa.x - c.x, wa.y - c.y, c.x + c.width - (wa.x + wa.width), c.y + c.height - (wa.y + wa.height))
+}
+function onMaximized(w: BrowserWindow) {
+  const prev = pseudoMax.get(w)
+  if (prev) { pseudoMax.delete(w); w.unmaximize(); w.setBounds(prev); return } // second click: restore
+  if (maximizeOverflow(w) <= 1) return
+  const wa = screen.getDisplayMatching(w.getBounds()).workArea
+  const normal = w.getNormalBounds()
+  w.unmaximize(); w.setBounds(wa); pseudoMax.set(w, normal)
+}
+export function isPseudoMaximized(w: BrowserWindow) { return pseudoMax.has(w) }
+// read by the E2E window-geometry test through app.evaluate (main-process global; no IPC exposure)
+;(globalThis as any).__tidequillGeometry = (w: BrowserWindow) => windowGeometry(w)
+
 export function windowGeometry(w: BrowserWindow) {
   const d = screen.getDisplayMatching(w.getBounds())
-  return { maximized: w.isMaximized(), bounds: w.getBounds(), content: w.getContentBounds(), workArea: d.workArea, scale: d.scaleFactor }
+  return { maximized: w.isMaximized(), pseudoMaximized: pseudoMax.has(w), bounds: w.getBounds(), content: w.getContentBounds(), workArea: d.workArea, scale: d.scaleFactor }
 }
 
 function createWindow() {
@@ -112,7 +135,7 @@ function createWindow() {
     },
   })
   Menu.setApplicationMenu(null)
-  { const w = win; fitToWorkArea(w); w.on('moved', () => fitToWorkArea(w)); const onMetrics = () => { if (!w.isDestroyed()) fitToWorkArea(w) }
+  { const w = win; fitToWorkArea(w); w.on('moved', () => { if (!pseudoMax.has(w)) fitToWorkArea(w) }); w.on('maximize', () => setTimeout(() => { if (!w.isDestroyed() && w.isMaximized()) onMaximized(w) }, 60)); const onMetrics = () => { if (!w.isDestroyed()) fitToWorkArea(w) }
     screen.on('display-metrics-changed', onMetrics); screen.on('display-added', onMetrics); screen.on('display-removed', onMetrics)
     w.on('closed', () => { screen.off('display-metrics-changed', onMetrics); screen.off('display-added', onMetrics); screen.off('display-removed', onMetrics) })
     if (process.env.TIDEQUILL_GEOMETRY_LOG) for (const ev of ['maximize', 'unmaximize', 'resize'] as const) w.on(ev as any, () => { try { fs.appendFileSync(process.env.TIDEQUILL_GEOMETRY_LOG!, JSON.stringify({ ev, ...windowGeometry(w) }) + '\n') } catch {} }) }
