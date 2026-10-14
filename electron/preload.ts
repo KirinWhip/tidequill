@@ -12,8 +12,11 @@ const api = {
   platform: process.platform,
   locale: () => ipcRenderer.invoke('app:locale'),
   setLanguage: (l: string) => ipcRenderer.invoke('app:setLanguage', l),
-  saveFile: (name: string, content: string) => ipcRenderer.invoke('file:save', name, content),
-  openFile: (exts: string[]) => ipcRenderer.invoke('file:open', exts),
+  saveFile: (name: string, content: string, opts?: { withSecrets?: boolean }) => ipcRenderer.invoke('file:save', name, content, opts),
+  openFile: (exts: string[], opts?: { backup?: boolean }) => ipcRenderer.invoke('file:open', exts, opts),
+  /** save / clear one secret (API key, WebDAV password, search key); returns the sentinel the renderer stores instead */
+  secretSet: (path: string, value: string) => ipcRenderer.invoke('secret:set', path, value),
+  secretStatus: () => ipcRenderer.invoke('secret:status'),
   syncTools: (servers: any[]) => ipcRenderer.invoke('tools:sync', servers),
   toolStatus: () => ipcRenderer.invoke('tools:status'),
   listTools: () => ipcRenderer.invoke('tools:list'),

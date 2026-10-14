@@ -46,6 +46,7 @@ export function startMockServer(port = 0, opts = {}) {
   const transcriptions = [] // { contentType, model, language, fileName, fileBytes, auth }
   const timings = [] // receive time of each request (diagnostics)
   const anthropic = [] // Round 3: requests to the strict Anthropic mock
+  const auths = [] // Authorization header of each /chat/completions request (Round 3 · A6)
   const server = http.createServer((req, res) => {
     timings.push({ ev: 'req', at: Date.now(), url: req.url, rport: req.socket.remotePort })
     let body = ''
@@ -125,7 +126,7 @@ export function startMockServer(port = 0, opts = {}) {
       if (!req.url.endsWith('/chat/completions')) { res.writeHead(404); return res.end('{"error":{"message":"not found"}}') }
       let j = {}
       try { j = JSON.parse(body) } catch {}
-      requests.push(j)
+      requests.push(j); auths.push(req.headers.authorization || '')
       timings.push({ at: Date.now(), model: j.model, last: String((j.messages || []).at(-1)?.content || '').slice(0, 40) })
       const model = j.model || 'mock-ok'
       const err = (status, message) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: { message, type: 'mock' } })) }
@@ -185,7 +186,7 @@ export function startMockServer(port = 0, opts = {}) {
   })
   server.on('connection', s => { timings.push({ ev: 'conn', at: Date.now(), rport: s.remotePort }); sockets.add(s); s.on('close', () => sockets.delete(s)) })
   return new Promise(resolve => server.listen(port, '127.0.0.1', () => resolve({
-    port: server.address().port, requests, timings, anthropic, searches, transcriptions,
+    port: server.address().port, requests, auths, timings, anthropic, searches, transcriptions,
     url: `http://127.0.0.1:${server.address().port}/v1`,
     close: () => new Promise(r => { for (const s of sockets) s.destroy(); server.close(() => r()) }),
   })))

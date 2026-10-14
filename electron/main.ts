@@ -1,3 +1,4 @@
+import { redactForRenderer, mergeFromRenderer, setSecret, secretSlots, resolveRequest, resolveInText, stashBackupSecrets, bindHosts, type VaultMeta } from './vault'
 import { app, BrowserWindow, screen, ipcMain, dialog, session, shell, Menu, safeStorage, clipboard, Tray, globalShortcut, nativeImage, nativeTheme, protocol, systemPreferences, utilityProcess } from 'electron'
 import crypto from 'node:crypto'
 import { autoUpdater } from 'electron-updater'
@@ -60,6 +61,27 @@ const cipher: Cipher = {
   available: () => safeStorage.isEncryptionAvailable(),
   encrypt: s => safeStorage.encryptString(s).toString('base64'),
   decrypt: s => safeStorage.decryptString(Buffer.from(s, 'base64')),
+}
+
+/** settings with decrypted secrets, kept in main only (cached; written back encrypted) */
+const vault = {
+  stash: new Map<string, string>(),
+  cache: null as null | { plain: any; meta: VaultMeta },
+  load(): null | { plain: any; meta: VaultMeta } {
+    if (this.cache) return this.cache
+    const raw = store.read('settings')
+    if (!raw) return null
+    const { settings, needsMigration } = decryptSettings(raw, cipher)
+    const { _vault, ...plain } = settings
+    const meta = bindHosts(plain, _vault)
+    this.cache = { plain, meta }
+    if (needsMigration || JSON.stringify(meta) !== JSON.stringify(_vault || null)) this.save(plain, meta) // encrypt plaintext keys (1.0.0 and earlier) / bind hosts (1.0.1)
+    return this.cache
+  },
+  save(plain: any, meta: VaultMeta) {
+    this.cache = { plain, meta }
+    store.write('settings', encryptSettings({ ...plain, _vault: meta }, cipher))
+  },
 }
 
 function readJSON(f: string) { try { return JSON.parse(fs.readFileSync(f, 'utf8')) } catch { return undefined } }
@@ -169,6 +191,15 @@ const LEGACY_PRODUCT_NAME = 'ChatBox Clone' // product name used before v1.0
 export const ABOUT = { name: 'Tidequill', nameZh: '\u6f6e\u7b3a', license: 'MIT', author: '\u8ffd\u9010', repo: 'https://github.com/KirinWhip/tidequill' }
 
 app.whenReady().then(() => {
+  // E2E only (TIDEQUILL_IPC_AUDIT=<file>): log every IPC reply and main->renderer event, so tests can assert that no
+  // plaintext secret is ever sent to the renderer
+  if (process.env.TIDEQUILL_IPC_AUDIT) {
+    const F = process.env.TIDEQUILL_IPC_AUDIT
+    const log = (o: any) => { try { fs.appendFileSync(F, JSON.stringify(o, (_k, v) => v instanceof Uint8Array ? Buffer.from(v).toString('utf8') : v) + '\n') } catch { /* ignore */ } }
+    const handle = ipcMain.handle.bind(ipcMain)
+    ;(ipcMain as any).handle = (ch: string, fn: any) => handle(ch, async (...a: any[]) => { const r = await fn(...a); log({ ch, args: a.slice(1), r }); return r })
+    app.on('web-contents-created', (_e, wc) => { const send = wc.send.bind(wc); (wc as any).send = (ch: string, ...args: any[]) => { log({ send: ch, args }); return send(ch, ...args) } })
+  }
   migrateLegacyProfile()
   fs.mkdirSync(dataDir(), { recursive: true })
   store = new JsonStore(dataDir(), path.join(app.getPath('userData'), 'backups'))
@@ -244,18 +275,30 @@ app.whenReady().then(() => {
     } catch (e: any) { return { ok: false, error: String(e?.message || e) } }
   })
 
+  // ---- settings + secrets (Round 3 · A6): the renderer only ever receives sentinels for saved secrets ----
   ipcMain.handle('kv:get', (_e, k: string) => {
     if (!ALLOWED_KEYS.has(k)) throw new Error('invalid key')
-    const v = store.read(k)
-    if (k !== 'settings' || !v) return v
-    const { settings, needsMigration } = decryptSettings(v, cipher)
-    if (needsMigration) writeJSON(fileFor(k), encryptSettings(v, cipher)) // migrate plaintext keys
-    return settings
+    if (k !== 'settings') return store.read(k)
+    const s = vault.load()
+    return s ? redactForRenderer(s.plain) : s
   })
   ipcMain.handle('kv:set', (_e, k: string, v: any) => {
     if (!ALLOWED_KEYS.has(k)) throw new Error('invalid key')
-    store.write(k, k === 'settings' ? encryptSettings(v, cipher) : v)
+    if (k !== 'settings') return store.write(k, v)
+    const cur = vault.load()
+    const { _vault, ...incoming } = (v || {}) as any
+    const r = mergeFromRenderer(incoming, cur?.plain, vault.stash, cur?.meta || { hosts: {} })
+    vault.save(r.settings, r.meta)
   })
+  ipcMain.handle('secret:set', (_e, p: string, value: string) => {
+    const cur = vault.load()
+    if (!cur) throw new Error('no settings')
+    const r = setSecret(cur.plain, cur.meta, String(p), String(value ?? ''))
+    vault.save(r.settings, r.meta)
+    return r.sentinel
+  })
+  /** which slots have a saved secret and which host each is bound to (no values) */
+  ipcMain.handle('secret:status', () => { const cur = vault.load(); return cur ? Object.fromEntries(secretSlots(cur.plain).filter(x => x.value).map(x => [x.path, { host: cur.meta.hosts[x.path] || '' }])) : {} })
   ipcMain.handle('storage:notices', () => store.notices)
   ipcMain.handle('storage:dismiss', () => { store.notices = [] })
   ipcMain.handle('devmode:set', (_e, on: boolean) => { devMode = !!on; if (!devToolsAllowed()) win?.webContents.closeDevTools(); return { devMode, packaged: app.isPackaged } })
@@ -277,7 +320,11 @@ app.whenReady().then(() => {
     const wc = e.sender
     const t0 = Date.now(); let tHead = 0, tFirst = 0
     if (HTTP_LOG) apiSession().resolveProxy(req.url).then(p => httpLog({ id, ev: 'proxy', proxy: p, ms: Date.now() - t0 }))
-    runBridgeRequest(apiSession().fetch.bind(apiSession()) as any, req, ev => {
+    // secrets are inserted here, in main, and only for the host each secret is bound to
+    const cur = vault.load()
+    const resolved = cur ? resolveRequest(req, cur.plain, cur.meta) : { req, used: [] as string[] }
+    if (resolved.error) { inflight.delete(id); if (!wc.isDestroyed()) wc.send('http:event', id, { type: 'error', code: 'auth', message: resolved.error }); return }
+    runBridgeRequest(apiSession().fetch.bind(apiSession()) as any, resolved.req as BridgeRequest, ev => {
       if (HTTP_LOG) {
         if (ev.type === 'head' && !tHead) tHead = Date.now()
         if (ev.type === 'chunk' && !tFirst) tFirst = Date.now()
@@ -292,15 +339,19 @@ app.whenReady().then(() => {
   })
   ipcMain.on('http:abort', (_e, id: string) => inflight.get(id)?.abort())
 
-  ipcMain.handle('file:save', async (_e, name: string, content: string) => {
+  ipcMain.handle('file:save', async (_e, name: string, content: string, opts?: { withSecrets?: boolean }) => {
     const r = await dialog.showSaveDialog(win!, { defaultPath: name })
     if (r.canceled || !r.filePath) return false
-    fs.writeFileSync(r.filePath, content); return true
+    // backup "include keys": the renderer only has sentinels; main writes the real values into the file the user chose
+    const out = opts?.withSecrets ? resolveInText(String(content), vault.load()?.plain) : content
+    fs.writeFileSync(r.filePath, out); return true
   })
-  ipcMain.handle('file:open', async (_e, exts: string[]) => {
+  ipcMain.handle('file:open', async (_e, exts: string[], opts?: { backup?: boolean }) => {
     const r = await dialog.showOpenDialog(win!, { properties: ['openFile'], filters: [{ name: 'Files', extensions: exts }] })
     if (r.canceled || !r.filePaths[0]) return null
-    return { name: path.basename(r.filePaths[0]), content: fs.readFileSync(r.filePaths[0], 'utf8') }
+    const text = fs.readFileSync(r.filePaths[0], 'utf8')
+    // a backup that contains keys: keys stay in main (stash), the renderer gets import sentinels
+    return { name: path.basename(r.filePaths[0]), content: opts?.backup ? stashBackupSecrets(text, vault.stash) : text }
   })
 
   // ---- tools: every call needs user confirmation unless "always allow" was chosen ----

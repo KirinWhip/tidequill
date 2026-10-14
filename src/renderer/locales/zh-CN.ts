@@ -137,5 +137,12 @@ export const zhCN = {
   copyDetails: "复制详情",
   errServerBody: "服务器返回的错误",
   errRequestSummary: "请求摘要（已隐去内容和密钥）",
+  secretSaved: "已保存",
+  secretReplace: "替换",
+  secretClear: "清除",
+  secretSave: "保存",
+  secretClearConfirm: "确定清除已保存的密钥？",
+  secretHint: "密钥只保存在本机主进程中（系统加密存储），界面上不会再显示；需要更换时点“替换”。",
+  secretHostChanged: "密钥绑定到 {host}，地址已更改：请重新填写密钥，否则不会发送。",
 }
 export type Dict = typeof zhCN

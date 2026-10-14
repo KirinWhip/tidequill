@@ -63,6 +63,8 @@ test('web search: settings, key encrypted on disk, toolbar toggle, request via m
   await page.locator('.seg button[data-provider="tavily"]').click()
   await page.getByTestId('search-key').fill('tvly-e2e-secret')
   await expect(page.getByTestId('search-key')).toHaveAttribute('type', 'password')
+  await page.getByTestId('search-key-save').click()
+  await expect(page.getByTestId('search-key-state')).toHaveText(zhCN.secretSaved)
   await page.getByTestId('search-test').click()
   await expect(page.getByTestId('search-test-result')).toContainText(zhCN.searchTestOk.replace('{n}', '3'))
   await page.keyboard.press('Escape')
@@ -101,7 +103,9 @@ test('web search: settings, key encrypted on disk, toolbar toggle, request via m
   await shot('web-search-citations')
   // A4: an actual search failure (rejected key) -> small collapsible notice in that reply only, with retry / turn off
   await openSettings('searchTab')
+  await page.getByTestId('search-key-replace').click()
   await page.getByTestId('search-key').fill('wrong')
+  await page.getByTestId('search-key-save').click()
   await page.keyboard.press('Escape')
   const nSearch = mock.searches.length
   await send(page, '再问一次')

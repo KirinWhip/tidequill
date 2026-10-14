@@ -91,7 +91,10 @@ export default function App() {
 
   const saveSettings = (s: Settings) => {
     const prev = settings
-    setSettings(s); storage.saveSettings(s); setRequestTimeout(s.requestTimeout)
+    setSettings(s); setRequestTimeout(s.requestTimeout)
+    // a plain secret typed in a legacy path (e.g. onboarding): main stores it; reload so the renderer keeps only the placeholder
+    const plain = s.providers.some(p => p.apiKey && !p.apiKey.startsWith('tqsk_')) || (!!s.webdav?.password && !s.webdav.password.startsWith('tqsk_'))
+    Promise.resolve(storage.saveSettings(s)).then(() => { if (plain) storage.loadSettings().then(setSettings) })
     if (prev?.proxy !== s.proxy) api.setProxy(s.proxy)
     if (!!prev?.devMode !== !!s.devMode) api.setDevMode(!!s.devMode)
     if (JSON.stringify(prev?.mcpServers) !== JSON.stringify(s.mcpServers)) api.syncTools(s.mcpServers)
@@ -335,10 +338,10 @@ export default function App() {
       const data: Record<string, any> = {}
       for (const k of BACKUP_KEYS) data[k] = await api.kvGet(k)
       data.conversations = convsRef.current
-      if (await api.saveFile(`tidequill-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(makeBackup(data, includeKeys)))) showToast(t.backupDone)
+      if (await api.saveFile(`tidequill-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(makeBackup(data, includeKeys)), { withSecrets: includeKeys })) showToast(t.backupDone)
     },
     async restore() {
-      const f = await api.openFile(['json'])
+      const f = await api.openFile(['json'], { backup: true }) // keys in the file stay in main
       if (!f) return
       let b
       try { b = parseBackup(f.content) } catch { alert(t.err_invalid_file); return }

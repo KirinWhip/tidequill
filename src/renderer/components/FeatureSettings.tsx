@@ -7,6 +7,7 @@ import { DEFAULT_STT } from '../../shared/stt'
 import { DEFAULT_OCR_SOURCE } from '../../shared/storage'
 import { fmtBytes } from '../../shared/office'
 import { api, bridgeFetch } from '../api'
+import { SecretField } from './SecretField'
 
 const KEY_FIELD: Partial<Record<SearchProviderId, 'tavilyKey' | 'bingKey' | 'braveKey'>> = { tavily: 'tavilyKey', bing: 'bingKey', brave: 'braveKey' }
 
@@ -33,10 +34,7 @@ export function SearchTab({ s, t, set, secure }: { s: Settings; t: Dict; set(p: 
         {SEARCH_PROVIDERS.map(p => <button key={p} role="radio" aria-checked={ws.provider === p} data-provider={p} className={ws.provider === p ? 'on' : ''} onClick={() => setWs({ provider: p })}>{t[('sp_' + p) as 'sp_tavily']}</button>)}
       </div></label>
       {ws.provider === 'bing' && <div className="meta warnline" data-testid="bing-note">{t.bingHint}</div>}
-      {kf && <label>{t.searchKey}<span className="keyrow">
-        <input data-testid="search-key" type={show ? 'text' : 'password'} value={ws[kf]} autoComplete="off" spellCheck={false} onChange={e => setWs({ [kf]: e.target.value.trim() } as any)} />
-        <button className="icon-btn" title={show ? t.hideKey : t.showKey} aria-label={show ? t.hideKey : t.showKey} onClick={() => setShow(!show)}>{show ? <EyeOff size={15} /> : <Eye size={15} />}</button>
-      </span></label>}
+      {kf && <label>{t.searchKey}<SecretField key={kf} path={`webSearch/${kf}`} value={ws[kf]} testid="search-key" onSaved={v => setWs({ [kf]: v } as any)} /></label>}
       {ws.provider === 'searxng' && <><label>{t.searxngUrl}<input data-testid="searxng-url" value={ws.searxngUrl} placeholder={SEARXNG_PH} onChange={e => setWs({ searxngUrl: e.target.value.trim() })} /></label>
         <div className="meta">{t.searxngHint}</div></>}
       {ws.provider !== 'searxng' && <label>{t.endpointOverride}<input data-testid="search-endpoint" value={ws.endpoints?.[ws.provider] || ''} placeholder={DEFAULT_ENDPOINTS[ws.provider as 'tavily']}
