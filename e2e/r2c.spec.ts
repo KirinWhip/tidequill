@@ -108,6 +108,19 @@ test('web search: settings, key encrypted on disk, toolbar toggle, request via m
   await expect(page.locator('.msg.assistant').last()).toContainText('Hello from mock')
 })
 
+test('attachments: PDF text extraction (pdf.js worker, all pages)', async () => {
+  const ud = seedUserData({ mockUrl: mock.url, conversations: [C('a', 'PDF', [])] })
+  ;({ app, page } = await launch(ud))
+  await page.locator('.conv').first().click()
+  await page.locator('.composer input[type=file]').setInputFiles([path.join(FIX, 'sample.pdf')])
+  await expect(page.locator('.pending .filechip[data-kind=pdf]')).toContainText('sample.pdf')
+  await page.locator('.composer textarea').fill('read the pdf')
+  await page.locator('.composer textarea').press('Enter')
+  await expect(page.locator('.msg.assistant').last()).toContainText('Hello from mock')
+  const sent = contentOf(mock.requests.at(-1).messages.at(-1))
+  expect(sent).toContain('<file name="sample.pdf">'); expect(sent).toContain('Tidequill PDF fixture page one'); expect(sent).toContain('Second page: tides 42')
+})
+
 test('attachments: xlsx / pptx text extraction, oversized and legacy files get a clear message', async () => {
   const ud = seedUserData({ mockUrl: mock.url, conversations: [C('a', '附件', [])], settings: { maxAttachmentMB: 1 } })
   ;({ app, page } = await launch(ud))
